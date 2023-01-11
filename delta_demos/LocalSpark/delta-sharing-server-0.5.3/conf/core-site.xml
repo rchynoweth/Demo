@@ -1,0 +1,18 @@
+
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+<configuration>
+  <property>
+    <name>fs.azure.account.auth.type.YOUR-ACCOUNT-NAME.dfs.core.windows.net</name>
+    <value>SharedKey</value>
+    <description>
+    </description>
+  </property>
+  <property>
+    <name>fs.azure.account.key.YOUR-ACCOUNT-NAME.dfs.core.windows.net</name>
+    <value>YOUR-ACCOUNT-KEY</value>
+    <description>
+    The secret password. Never share these.
+    </description>
+  </property>
+</configuration>

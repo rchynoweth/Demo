@@ -1,0 +1,17 @@
+{
+    "name": "Simply Python",
+    "existing_cluster_id": "0812-164905-tear862",
+    "libraries": [],
+    "email_notifications": {
+        "on_start": [],
+        "on_success": [],
+        "on_failure": []
+    },
+    "timeout_seconds": 3600,
+    "max_retries": 1,
+    "spark_python_task": {
+        "python_file": "dbfs:/users/ryan.chynoweth@databricks.com/demo_env/simply_python.py", 
+        "parameters": ["here is my first parameter", "this is my second parameter"]
+    }
+    
+}

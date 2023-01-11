@@ -1,0 +1,358 @@
+#!/usr/bin/env bash
+
+###  ------------------------------- ###
+###  Helper methods for BASH scripts ###
+###  ------------------------------- ###
+
+die() {
+  echo "$@" 1>&2
+  exit 1
+}
+
+realpath () {
+(
+  TARGET_FILE="$1"
+  CHECK_CYGWIN="$2"
+
+  cd "$(dirname "$TARGET_FILE")"
+  TARGET_FILE=$(basename "$TARGET_FILE")
+
+  COUNT=0
+  while [ -L "$TARGET_FILE" -a $COUNT -lt 100 ]
+  do
+      TARGET_FILE=$(readlink "$TARGET_FILE")
+      cd "$(dirname "$TARGET_FILE")"
+      TARGET_FILE=$(basename "$TARGET_FILE")
+      COUNT=$(($COUNT + 1))
+  done
+
+  if [ "$TARGET_FILE" == "." -o "$TARGET_FILE" == ".." ]; then
+    cd "$TARGET_FILE"
+    TARGET_FILEPATH=
+  else
+    TARGET_FILEPATH=/$TARGET_FILE
+  fi
+
+  # make sure we grab the actual windows path, instead of cygwin's path.
+  if [[ "x$CHECK_CYGWIN" == "x" ]]; then
+    echo "$(pwd -P)/$TARGET_FILE"
+  else
+    echo $(cygwinpath "$(pwd -P)/$TARGET_FILE")
+  fi
+)
+}
+
+# TODO - Do we need to detect msys?
+
+# Uses uname to detect if we're in the odd cygwin environment.
+is_cygwin() {
+  local os=$(uname -s)
+  case "$os" in
+    CYGWIN*) return 0 ;;
+    *)  return 1 ;;
+  esac
+}
+
+# This can fix cygwin style /cygdrive paths so we get the
+# windows style paths.
+cygwinpath() {
+  local file="$1"
+  if is_cygwin; then
+    echo $(cygpath -w $file)
+  else
+    echo $file
+  fi
+}
+
+# Make something URI friendly
+make_url() {
+  url="$1"
+  local nospaces=${url// /%20}
+  if is_cygwin; then
+    echo "/${nospaces//\\//}"
+  else
+    echo "$nospaces"
+  fi
+}
+
+# This crazy function reads in a vanilla "linux" classpath string (only : are separators, and all /),
+# and returns a classpath with windows style paths, and ; separators.
+fixCygwinClasspath() {
+  OLDIFS=$IFS
+  IFS=":"
+  read -a classpath_members <<< "$1"
+  declare -a fixed_members
+  IFS=$OLDIFS
+  for i in "${!classpath_members[@]}"
+  do
+    fixed_members[i]=$(realpath "${classpath_members[i]}" "fix")
+  done
+  IFS=";"
+  echo "${fixed_members[*]}"
+  IFS=$OLDIFS
+}
+
+# Fix the classpath we use for cygwin.
+fix_classpath() {
+  cp="$1"
+  if is_cygwin; then
+    echo "$(fixCygwinClasspath "$cp")"
+  else
+    echo "$cp"
+  fi
+}
+# Detect if we should use JAVA_HOME or just try PATH.
+get_java_cmd() {
+  # High-priority override for Jlink images
+  if [[ -n "$bundled_jvm" ]];  then
+    echo "$bundled_jvm/bin/java"
+  elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then
+    echo "$JAVA_HOME/bin/java"
+  else
+    echo "java"
+  fi
+}
+
+echoerr () {
+  echo 1>&2 "$@"
+}
+vlog () {
+  [[ $verbose || $debug ]] && echoerr "$@"
+}
+dlog () {
+  [[ $debug ]] && echoerr "$@"
+}
+execRunner () {
+  # print the arguments one to a line, quoting any containing spaces
+  [[ $verbose || $debug ]] && echo "# Executing command line:" && {
+    for arg; do
+      if printf "%s\n" "$arg" | grep -q ' '; then
+        printf "\"%s\"\n" "$arg"
+      else
+        printf "%s\n" "$arg"
+      fi
+    done
+    echo ""
+  }
+
+  # we use "exec" here for our pids to be accurate.
+  exec "$@"
+}
+addJava () {
+  dlog "[addJava] arg = '$1'"
+  java_args+=( "$1" )
+}
+addApp () {
+  dlog "[addApp] arg = '$1'"
+  app_commands+=( "$1" )
+}
+addResidual () {
+  dlog "[residual] arg = '$1'"
+  residual_args+=( "$1" )
+}
+addDebugger () {
+  addJava "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=$1"
+}
+
+require_arg () {
+  local type="$1"
+  local opt="$2"
+  local arg="$3"
+  if [[ -z "$arg" ]] || [[ "${arg:0:1}" == "-" ]]; then
+    die "$opt requires <$type> argument"
+  fi
+}
+is_function_defined() {
+  declare -f "$1" > /dev/null
+}
+
+# Attempt to detect if the script is running via a GUI or not
+# TODO - Determine where/how we use this generically
+detect_terminal_for_ui() {
+  [[ ! -t 0 ]] && [[ "${#residual_args}" == "0" ]] && {
+    echo "true"
+  }
+  # SPECIAL TEST FOR MAC
+  [[ "$(uname)" == "Darwin" ]] && [[ "$HOME" == "$PWD" ]] && [[ "${#residual_args}" == "0" ]] && {
+    echo "true"
+  }
+}
+
+# Processes incoming arguments and places them in appropriate global variables.  called by the run method.
+process_args () {
+  local no_more_snp_opts=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+             --) shift && no_more_snp_opts=1 && break ;;
+       -h|-help) usage; exit 1 ;;
+    -v|-verbose) verbose=1 && shift ;;
+      -d|-debug) debug=1 && shift ;;
+
+    -no-version-check) no_version_check=1 && shift ;;
+
+           -mem) echo "!! WARNING !! -mem option is ignored. Please use -J-Xmx and -J-Xms" && shift 2 ;;
+     -jvm-debug) require_arg port "$1" "$2" && addDebugger $2 && shift 2 ;;
+
+          -main) custom_mainclass="$2" && shift 2 ;;
+
+     -java-home) require_arg path "$1" "$2" && jre=`eval echo $2` && java_cmd="$jre/bin/java" && shift 2 ;;
+
+ -D*|-agentlib*|-XX*) addJava "$1" && shift ;;
+                 -J*) addJava "${1:2}" && shift ;;
+                   *) addResidual "$1" && shift ;;
+    esac
+  done
+
+  if [[ no_more_snp_opts ]]; then
+    while [[ $# -gt 0 ]]; do
+      addResidual "$1" && shift
+    done
+  fi
+
+  is_function_defined process_my_args && {
+    myargs=("${residual_args[@]}")
+    residual_args=()
+    process_my_args "${myargs[@]}"
+  }
+}
+
+# Actually runs the script.
+run() {
+  # TODO - check for sane environment
+
+  # process the combined args, then reset "$@" to the residuals
+  process_args "$@"
+  set -- "${residual_args[@]}"
+  argumentCount=$#
+
+  #check for jline terminal fixes on cygwin
+  if is_cygwin; then
+    stty -icanon min 1 -echo > /dev/null 2>&1
+    addJava "-Djline.terminal=jline.UnixTerminal"
+    addJava "-Dsbt.cygwin=true"
+  fi
+
+  # check java version
+  if [[ ! $no_version_check ]]; then
+    java_version_check
+  fi
+
+  if [ -n "$custom_mainclass" ]; then
+    mainclass=("$custom_mainclass")
+  else
+    mainclass=("${app_mainclass[@]}")
+  fi
+
+  # Now we check to see if there are any java opts on the environment. These get listed first, with the script able to override them.
+  if [[ "$JAVA_OPTS" != "" ]]; then
+    java_opts="${JAVA_OPTS}"
+  fi
+
+  # run sbt
+  execRunner "$java_cmd" \
+    ${java_opts[@]} \
+    "${java_args[@]}" \
+    -cp "$(fix_classpath "$app_classpath")" \
+    "${mainclass[@]}" \
+    "${app_commands[@]}" \
+    "${residual_args[@]}"
+
+  local exit_code=$?
+  if is_cygwin; then
+    stty icanon echo > /dev/null 2>&1
+  fi
+  exit $exit_code
+}
+
+# Loads a configuration file full of default command line options for this script.
+loadConfigFile() {
+  cat "$1" | sed $'/^\#/d;s/\r$//'
+}
+
+# Now check to see if it's a good enough version
+# TODO - Check to see if we have a configured default java version, otherwise use 1.6
+java_version_check() {
+  readonly java_version=$("$java_cmd" -version 2>&1 | awk -F '"' '/version/ {print $2}')
+  if [[ "$java_version" == "" ]]; then
+    echo
+    echo No java installations was detected.
+    echo Please go to http://www.java.com/getjava/ and download
+    echo
+    exit 1
+  else
+    local major=$(echo "$java_version" | cut -d'.' -f1)
+    if [[ "$major" -eq "1" ]]; then
+     local major=$(echo "$java_version" | cut -d'.' -f2)
+    fi
+    if [[ "$major" -lt "6" ]]; then
+      echo
+      echo The java installation you have is not up to date
+      echo $app_name requires at least version 1.6+, you have
+      echo version $java_version
+      echo
+      echo Please go to http://www.java.com/getjava/ and download
+      echo a valid Java Runtime and install before running $app_name.
+      echo
+      exit 1
+    fi
+  fi
+}
+
+###  ------------------------------- ###
+###  Start of customized settings    ###
+###  ------------------------------- ###
+usage() {
+ cat <<EOM
+Usage: $script_name [options]
+
+  -h | -help         print this message
+  -v | -verbose      this runner is chattier
+  -d | -debug        enable debug output for the launcher script
+  -no-version-check  Don't run the java version check.
+  -main <classname>  Define a custom main class
+  -jvm-debug <port>  Turn on JVM debugging, open at the given port.
+
+  # java version (default: java from PATH, currently $(java -version 2>&1 | grep version))
+  -java-home <path>         alternate JAVA_HOME
+
+  # jvm options and output control
+  JAVA_OPTS          environment variable, if unset uses "$java_opts"
+  -Dkey=val          pass -Dkey=val directly to the java runtime
+  -J-X               pass option -X directly to the java runtime
+                     (-J is stripped)
+
+  # special option
+  --                 To stop parsing built-in commands from the rest of the command-line.
+                     e.g.) enabling debug and sending -d as app argument
+                     \$ ./start-script -d -- -d
+
+In the case of duplicated or conflicting options, basically the order above
+shows precedence: JAVA_OPTS lowest, command line options highest except "--".
+Available main classes:
+	io.delta.sharing.server.DeltaSharingService
+EOM
+}
+
+###  ------------------------------- ###
+###  Main script                     ###
+###  ------------------------------- ###
+
+declare -a residual_args
+declare -a java_args
+declare -a app_commands
+declare -r real_script_path="$(realpath "$0")"
+declare -r app_home="$(realpath "$(dirname "$real_script_path")")"
+# TODO - Check whether this is ok in cygwin...
+declare -r lib_dir="$(realpath "${app_home}/../lib")"
+declare -a app_mainclass=(io.delta.sharing.server.DeltaSharingService)
+
+declare -r script_conf_file="${app_home}/../conf/application.ini"
+declare -r app_classpath="$lib_dir/io.delta.delta-sharing-server-0.5.3.jar:$lib_dir/org.scala-lang.scala-library-2.12.10.jar:$lib_dir/com.thesamet.scalapb.scalapb-runtime_2.12-0.11.1.jar:$lib_dir/com.fasterxml.jackson.core.jackson-core-2.6.7.jar:$lib_dir/com.fasterxml.jackson.core.jackson-databind-2.6.7.3.jar:$lib_dir/com.fasterxml.jackson.module.jackson-module-scala_2.12-2.6.7.1.jar:$lib_dir/com.fasterxml.jackson.dataformat.jackson-dataformat-yaml-2.6.7.jar:$lib_dir/org.json4s.json4s-jackson_2.12-3.5.3.jar:$lib_dir/com.linecorp.armeria.armeria-scalapb_2.12-1.6.0.jar:$lib_dir/org.apache.hadoop.hadoop-aws-2.10.1.jar:$lib_dir/com.amazonaws.aws-java-sdk-bundle-1.12.189.jar:$lib_dir/org.apache.hadoop.hadoop-azure-2.10.1.jar:$lib_dir/com.google.cloud.google-cloud-storage-2.2.2.jar:$lib_dir/com.google.cloud.bigdataoss.gcs-connector-hadoop2-2.2.4.jar:$lib_dir/org.apache.hadoop.hadoop-common-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-client-2.10.1.jar:$lib_dir/org.apache.parquet.parquet-hadoop-1.10.1.jar:$lib_dir/io.delta.delta-standalone_2.12-0.4.0.jar:$lib_dir/org.apache.spark.spark-sql_2.12-2.4.7.jar:$lib_dir/org.slf4j.slf4j-api-1.7.30.jar:$lib_dir/org.slf4j.slf4j-simple-1.6.1.jar:$lib_dir/net.sourceforge.argparse4j.argparse4j-0.9.0.jar:$lib_dir/com.thesamet.scalapb.lenses_2.12-0.11.1.jar:$lib_dir/com.google.protobuf.protobuf-java-3.19.1.jar:$lib_dir/org.scala-lang.modules.scala-collection-compat_2.12-2.4.3.jar:$lib_dir/com.fasterxml.jackson.core.jackson-annotations-2.6.7.jar:$lib_dir/org.scala-lang.scala-reflect-2.12.10.jar:$lib_dir/com.fasterxml.jackson.module.jackson-module-paranamer-2.7.9.jar:$lib_dir/org.yaml.snakeyaml-1.15.jar:$lib_dir/org.json4s.json4s-core_2.12-3.5.3.jar:$lib_dir/com.linecorp.armeria.armeria-1.6.0.jar:$lib_dir/com.thesamet.scalapb.scalapb-json4s_2.12-0.11.0.jar:$lib_dir/com.google.code.findbugs.jsr305-3.0.2.jar:$lib_dir/com.linecorp.armeria.armeria-grpc-1.6.0.jar:$lib_dir/com.thesamet.scalapb.scalapb-runtime-grpc_2.12-0.11.1.jar:$lib_dir/org.apache.commons.commons-lang3-3.5.jar:$lib_dir/org.apache.httpcomponents.httpclient-4.5.13.jar:$lib_dir/com.microsoft.azure.azure-storage-7.0.1.jar:$lib_dir/org.codehaus.jackson.jackson-mapper-asl-1.9.13.jar:$lib_dir/org.codehaus.jackson.jackson-core-asl-1.9.13.jar:$lib_dir/com.google.guava.guava-31.0.1-jre.jar:$lib_dir/com.google.guava.failureaccess-1.0.1.jar:$lib_dir/com.google.guava.listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar:$lib_dir/org.checkerframework.checker-qual-3.19.0.jar:$lib_dir/com.google.j2objc.j2objc-annotations-1.3.jar:$lib_dir/com.google.http-client.google-http-client-1.40.1.jar:$lib_dir/io.opencensus.opencensus-contrib-http-util-0.28.0.jar:$lib_dir/com.google.http-client.google-http-client-jackson2-1.40.1.jar:$lib_dir/com.google.api-client.google-api-client-1.32.2.jar:$lib_dir/com.google.oauth-client.google-oauth-client-1.32.1.jar:$lib_dir/com.google.http-client.google-http-client-gson-1.40.1.jar:$lib_dir/com.google.http-client.google-http-client-apache-v2-1.40.1.jar:$lib_dir/com.google.apis.google-api-services-storage-v1-rev20211201-1.32.1.jar:$lib_dir/com.google.code.gson.gson-2.8.9.jar:$lib_dir/com.google.cloud.google-cloud-core-2.3.3.jar:$lib_dir/com.google.auto.value.auto-value-annotations-1.8.2.jar:$lib_dir/com.google.api.grpc.proto-google-common-protos-2.7.0.jar:$lib_dir/com.google.cloud.google-cloud-core-http-2.3.3.jar:$lib_dir/com.google.http-client.google-http-client-appengine-1.40.1.jar:$lib_dir/com.google.api.gax-httpjson-0.92.1.jar:$lib_dir/com.google.api.gax-2.7.1.jar:$lib_dir/com.google.auth.google-auth-library-credentials-1.3.0.jar:$lib_dir/com.google.auth.google-auth-library-oauth2-http-1.3.0.jar:$lib_dir/com.google.api.api-common-2.1.1.jar:$lib_dir/javax.annotation.javax.annotation-api-1.3.2.jar:$lib_dir/io.opencensus.opencensus-api-0.28.0.jar:$lib_dir/io.grpc.grpc-context-1.42.1.jar:$lib_dir/com.google.api.grpc.proto-google-iam-v1-1.1.7.jar:$lib_dir/com.google.protobuf.protobuf-java-util-3.19.1.jar:$lib_dir/org.threeten.threetenbp-1.5.2.jar:$lib_dir/com.google.api-client.google-api-client-jackson2-1.32.2.jar:$lib_dir/com.google.cloud.bigdataoss.util-2.2.4.jar:$lib_dir/com.google.cloud.bigdataoss.util-hadoop-hadoop2-2.2.4.jar:$lib_dir/com.google.cloud.bigdataoss.gcsio-2.2.4.jar:$lib_dir/com.google.flogger.flogger-0.7.1.jar:$lib_dir/com.google.flogger.google-extensions-0.7.1.jar:$lib_dir/com.google.flogger.flogger-system-backend-0.7.1.jar:$lib_dir/org.apache.hadoop.hadoop-annotations-2.10.1.jar:$lib_dir/commons-cli.commons-cli-1.2.jar:$lib_dir/org.apache.commons.commons-math3-3.4.1.jar:$lib_dir/xmlenc.xmlenc-0.52.jar:$lib_dir/commons-codec.commons-codec-1.11.jar:$lib_dir/commons-io.commons-io-2.4.jar:$lib_dir/commons-net.commons-net-3.1.jar:$lib_dir/commons-collections.commons-collections-3.2.2.jar:$lib_dir/javax.servlet.servlet-api-2.5.jar:$lib_dir/org.mortbay.jetty.jetty-6.1.26.jar:$lib_dir/org.mortbay.jetty.jetty-util-6.1.26.jar:$lib_dir/org.mortbay.jetty.jetty-sslengine-6.1.26.jar:$lib_dir/javax.servlet.jsp.jsp-api-2.1.jar:$lib_dir/com.sun.jersey.jersey-core-1.9.jar:$lib_dir/com.sun.jersey.jersey-json-1.9.jar:$lib_dir/com.sun.jersey.jersey-server-1.9.jar:$lib_dir/commons-logging.commons-logging-1.2.jar:$lib_dir/log4j.log4j-1.2.17.jar:$lib_dir/net.java.dev.jets3t.jets3t-0.9.0.jar:$lib_dir/commons-lang.commons-lang-2.6.jar:$lib_dir/commons-configuration.commons-configuration-1.6.jar:$lib_dir/commons-digester.commons-digester-1.8.jar:$lib_dir/commons-beanutils.commons-beanutils-1.9.4.jar:$lib_dir/org.slf4j.slf4j-log4j12-1.7.25.jar:$lib_dir/org.apache.avro.avro-1.8.2.jar:$lib_dir/org.apache.hadoop.hadoop-auth-2.10.1.jar:$lib_dir/com.jcraft.jsch-0.1.55.jar:$lib_dir/org.apache.curator.curator-client-2.13.0.jar:$lib_dir/org.apache.curator.curator-recipes-2.13.0.jar:$lib_dir/org.apache.htrace.htrace-core4-4.1.0-incubating.jar:$lib_dir/org.apache.zookeeper.zookeeper-3.4.14.jar:$lib_dir/org.apache.commons.commons-compress-1.19.jar:$lib_dir/org.codehaus.woodstox.stax2-api-3.1.4.jar:$lib_dir/com.fasterxml.woodstox.woodstox-core-5.0.3.jar:$lib_dir/org.apache.hadoop.hadoop-hdfs-client-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-mapreduce-client-app-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-api-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-mapreduce-client-core-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-mapreduce-client-jobclient-2.10.1.jar:$lib_dir/org.apache.parquet.parquet-column-1.10.1.jar:$lib_dir/org.apache.parquet.parquet-format-2.4.0.jar:$lib_dir/org.apache.parquet.parquet-jackson-1.10.1.jar:$lib_dir/org.xerial.snappy.snappy-java-1.1.7.5.jar:$lib_dir/commons-pool.commons-pool-1.6.jar:$lib_dir/com.github.mjakubowski84.parquet4s-core_2.12-1.2.1.jar:$lib_dir/com.univocity.univocity-parsers-2.7.3.jar:$lib_dir/org.apache.spark.spark-sketch_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-core_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-catalyst_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-tags_2.12-2.4.7.jar:$lib_dir/org.apache.orc.orc-core-1.5.5-nohive.jar:$lib_dir/org.apache.orc.orc-mapreduce-1.5.5-nohive.jar:$lib_dir/org.apache.arrow.arrow-vector-0.10.0.jar:$lib_dir/org.apache.xbean.xbean-asm6-shaded-4.8.jar:$lib_dir/org.spark-project.spark.unused-1.0.0.jar:$lib_dir/com.thoughtworks.paranamer.paranamer-2.8.jar:$lib_dir/org.json4s.json4s-ast_2.12-3.5.3.jar:$lib_dir/org.json4s.json4s-scalap_2.12-3.5.3.jar:$lib_dir/org.scala-lang.modules.scala-xml_2.12-1.0.6.jar:$lib_dir/io.micrometer.micrometer-core-1.6.5.jar:$lib_dir/io.netty.netty-transport-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-http2-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-haproxy-4.1.63.Final.jar:$lib_dir/io.netty.netty-resolver-dns-4.1.63.Final.jar:$lib_dir/org.reactivestreams.reactive-streams-1.0.3.jar:$lib_dir/io.netty.netty-resolver-dns-native-macos-4.1.63.Final-osx-x86_64.jar:$lib_dir/io.netty.netty-transport-native-unix-common-4.1.63.Final-linux-x86_64.jar:$lib_dir/io.netty.netty-transport-native-epoll-4.1.63.Final-linux-x86_64.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.38.Final.jar:$lib_dir/io.netty.netty-handler-proxy-4.1.63.Final.jar:$lib_dir/io.grpc.grpc-core-1.41.1.jar:$lib_dir/io.grpc.grpc-protobuf-1.41.1.jar:$lib_dir/io.grpc.grpc-services-1.36.1.jar:$lib_dir/io.grpc.grpc-stub-1.41.1.jar:$lib_dir/org.curioswitch.curiostack.protobuf-jackson-1.2.0.jar:$lib_dir/com.linecorp.armeria.armeria-grpc-protocol-1.6.0.jar:$lib_dir/org.apache.httpcomponents.httpcore-4.4.14.jar:$lib_dir/com.microsoft.azure.azure-keyvault-core-1.0.0.jar:$lib_dir/com.google.errorprone.error_prone_annotations-2.9.0.jar:$lib_dir/com.google.apis.google-api-services-iamcredentials-v1-rev20210326-1.32.1.jar:$lib_dir/io.grpc.grpc-api-1.41.1.jar:$lib_dir/io.grpc.grpc-alts-1.41.1.jar:$lib_dir/io.grpc.grpc-netty-shaded-1.41.1.jar:$lib_dir/com.google.api.grpc.grpc-google-cloud-storage-v2-2.0.1-alpha.jar:$lib_dir/org.checkerframework.checker-compat-qual-2.5.3.jar:$lib_dir/org.codehaus.jettison.jettison-1.1.jar:$lib_dir/com.sun.xml.bind.jaxb-impl-2.2.3-1.jar:$lib_dir/org.codehaus.jackson.jackson-jaxrs-1.9.13.jar:$lib_dir/org.codehaus.jackson.jackson-xc-1.9.13.jar:$lib_dir/asm.asm-3.1.jar:$lib_dir/com.jamesmurty.utils.java-xmlbuilder-0.4.jar:$lib_dir/org.tukaani.xz-1.5.jar:$lib_dir/com.nimbusds.nimbus-jose-jwt-7.9.jar:$lib_dir/org.apache.directory.server.apacheds-kerberos-codec-2.0.0-M15.jar:$lib_dir/org.apache.curator.curator-framework-2.13.0.jar:$lib_dir/com.github.spotbugs.spotbugs-annotations-3.1.9.jar:$lib_dir/org.apache.yetus.audience-annotations-0.5.0.jar:$lib_dir/io.netty.netty-3.10.6.Final.jar:$lib_dir/com.squareup.okhttp.okhttp-2.7.5.jar:$lib_dir/org.apache.hadoop.hadoop-mapreduce-client-common-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-mapreduce-client-shuffle-2.10.1.jar:$lib_dir/javax.xml.bind.jaxb-api-2.2.2.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-client-2.10.1.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-common-2.10.1.jar:$lib_dir/org.apache.parquet.parquet-common-1.10.1.jar:$lib_dir/org.apache.parquet.parquet-encoding-1.10.1.jar:$lib_dir/com.chuusai.shapeless_2.12-2.3.3.jar:$lib_dir/org.apache.avro.avro-mapred-1.8.2-hadoop2.jar:$lib_dir/com.twitter.chill_2.12-0.9.3.jar:$lib_dir/com.twitter.chill-java-0.9.3.jar:$lib_dir/org.apache.spark.spark-launcher_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-kvstore_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-network-common_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-network-shuffle_2.12-2.4.7.jar:$lib_dir/org.apache.spark.spark-unsafe_2.12-2.4.7.jar:$lib_dir/javax.activation.activation-1.1.1.jar:$lib_dir/javax.servlet.javax.servlet-api-3.1.0.jar:$lib_dir/com.ning.compress-lzf-1.0.3.jar:$lib_dir/org.lz4.lz4-java-1.4.0.jar:$lib_dir/com.github.luben.zstd-jni-1.3.2-2.jar:$lib_dir/org.roaringbitmap.RoaringBitmap-0.7.45.jar:$lib_dir/org.glassfish.jersey.core.jersey-client-2.22.2.jar:$lib_dir/org.glassfish.jersey.core.jersey-common-2.22.2.jar:$lib_dir/org.glassfish.jersey.core.jersey-server-2.22.2.jar:$lib_dir/org.glassfish.jersey.containers.jersey-container-servlet-2.22.2.jar:$lib_dir/org.glassfish.jersey.containers.jersey-container-servlet-core-2.22.2.jar:$lib_dir/com.clearspring.analytics.stream-2.7.0.jar:$lib_dir/io.dropwizard.metrics.metrics-core-3.1.5.jar:$lib_dir/io.dropwizard.metrics.metrics-jvm-3.1.5.jar:$lib_dir/io.dropwizard.metrics.metrics-json-3.1.5.jar:$lib_dir/io.dropwizard.metrics.metrics-graphite-3.1.5.jar:$lib_dir/org.apache.ivy.ivy-2.4.0.jar:$lib_dir/oro.oro-2.0.8.jar:$lib_dir/net.razorvine.pyrolite-4.13.jar:$lib_dir/net.sf.py4j.py4j-0.10.7.jar:$lib_dir/org.apache.commons.commons-crypto-1.0.0.jar:$lib_dir/org.scala-lang.modules.scala-parser-combinators_2.12-1.1.0.jar:$lib_dir/org.codehaus.janino.janino-3.0.16.jar:$lib_dir/org.codehaus.janino.commons-compiler-3.0.16.jar:$lib_dir/org.antlr.antlr4-runtime-4.7.jar:$lib_dir/org.apache.orc.orc-shims-1.5.5.jar:$lib_dir/io.airlift.aircompressor-0.10.jar:$lib_dir/org.apache.arrow.arrow-format-0.10.0.jar:$lib_dir/org.apache.arrow.arrow-memory-0.10.0.jar:$lib_dir/joda-time.joda-time-2.9.9.jar:$lib_dir/com.carrotsearch.hppc-0.7.2.jar:$lib_dir/com.vlkan.flatbuffers-1.2.0-3f79e055.jar:$lib_dir/org.hdrhistogram.HdrHistogram-2.1.12.jar:$lib_dir/org.latencyutils.LatencyUtils-2.0.3.jar:$lib_dir/io.netty.netty-common-4.1.63.Final.jar:$lib_dir/io.netty.netty-buffer-4.1.63.Final.jar:$lib_dir/io.netty.netty-resolver-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-4.1.63.Final.jar:$lib_dir/io.netty.netty-handler-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-http-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-dns-4.1.63.Final.jar:$lib_dir/io.netty.netty-transport-native-unix-common-4.1.63.Final.jar:$lib_dir/io.netty.netty-codec-socks-4.1.63.Final.jar:$lib_dir/com.google.android.annotations-4.1.1.4.jar:$lib_dir/io.perfmark.perfmark-api-0.23.0.jar:$lib_dir/io.grpc.grpc-protobuf-lite-1.41.1.jar:$lib_dir/org.codehaus.mojo.animal-sniffer-annotations-1.19.jar:$lib_dir/jakarta.annotation.jakarta.annotation-api-1.3.5.jar:$lib_dir/net.bytebuddy.byte-buddy-1.10.19.jar:$lib_dir/io.grpc.grpc-auth-1.41.1.jar:$lib_dir/io.grpc.grpc-grpclb-1.41.1.jar:$lib_dir/org.conscrypt.conscrypt-openjdk-uber-2.5.1.jar:$lib_dir/com.google.api.grpc.proto-google-cloud-storage-v2-2.0.1-alpha.jar:$lib_dir/org.mortbay.jetty.servlet-api-2.5-20081211.jar:$lib_dir/com.github.stephenc.jcip.jcip-annotations-1.0-1.jar:$lib_dir/net.minidev.json-smart-2.3.jar:$lib_dir/org.apache.directory.server.apacheds-i18n-2.0.0-M15.jar:$lib_dir/org.apache.directory.api.api-asn1-api-1.0.0-M20.jar:$lib_dir/org.apache.directory.api.api-util-1.0.0-M20.jar:$lib_dir/jline.jline-0.9.94.jar:$lib_dir/com.squareup.okio.okio-1.6.0.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-server-common-2.10.1.jar:$lib_dir/org.fusesource.leveldbjni.leveldbjni-all-1.8.jar:$lib_dir/javax.xml.stream.stax-api-1.0-2.jar:$lib_dir/com.sun.jersey.jersey-client-1.9.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-server-nodemanager-2.10.1.jar:$lib_dir/org.typelevel.macro-compat_2.12-1.1.1.jar:$lib_dir/org.apache.avro.avro-ipc-1.8.2.jar:$lib_dir/com.esotericsoftware.kryo-shaded-4.0.2.jar:$lib_dir/org.roaringbitmap.shims-0.7.45.jar:$lib_dir/javax.ws.rs.javax.ws.rs-api-2.0.1.jar:$lib_dir/org.glassfish.hk2.hk2-api-2.4.0-b34.jar:$lib_dir/org.glassfish.hk2.external.javax.inject-2.4.0-b34.jar:$lib_dir/org.glassfish.hk2.hk2-locator-2.4.0-b34.jar:$lib_dir/org.glassfish.jersey.bundles.repackaged.jersey-guava-2.22.2.jar:$lib_dir/org.glassfish.hk2.osgi-resource-locator-1.0.1.jar:$lib_dir/org.glassfish.jersey.media.jersey-media-jaxb-2.22.2.jar:$lib_dir/javax.validation.validation-api-1.1.0.Final.jar:$lib_dir/net.minidev.accessors-smart-1.2.jar:$lib_dir/com.google.inject.guice-3.0.jar:$lib_dir/com.sun.jersey.contribs.jersey-guice-1.9.jar:$lib_dir/org.apache.hadoop.hadoop-yarn-registry-2.10.1.jar:$lib_dir/org.apache.geronimo.specs.geronimo-jcache_1.0_spec-1.0-alpha-1.jar:$lib_dir/org.ehcache.ehcache-3.3.1.jar:$lib_dir/com.zaxxer.HikariCP-java7-2.4.12.jar:$lib_dir/com.microsoft.sqlserver.mssql-jdbc-6.2.1.jre7.jar:$lib_dir/com.codahale.metrics.metrics-core-3.0.1.jar:$lib_dir/com.esotericsoftware.minlog-1.3.0.jar:$lib_dir/org.objenesis.objenesis-2.5.1.jar:$lib_dir/org.glassfish.hk2.hk2-utils-2.4.0-b34.jar:$lib_dir/org.glassfish.hk2.external.aopalliance-repackaged-2.4.0-b34.jar:$lib_dir/org.javassist.javassist-3.18.1-GA.jar:$lib_dir/org.ow2.asm.asm-5.0.4.jar:$lib_dir/javax.inject.javax.inject-1.jar:$lib_dir/aopalliance.aopalliance-1.0.jar:$lib_dir/../conf"
+
+# java_cmd is overrode in process_args when -java-home is used
+declare java_cmd=$(get_java_cmd)
+
+# if configuration files exist, prepend their contents to $@ so it can be processed by this runner
+[[ -f "$script_conf_file" ]] && set -- $(loadConfigFile "$script_conf_file") "$@"
+
+run "$@"

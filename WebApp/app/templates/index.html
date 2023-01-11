@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function () {
+    $('#data').DataTable();
+    });
+</script>
+{% endblock %}
+
+{% block content %}
+    <h1>{% block title %} Overview {% endblock %}</h1>
+    <p> 
+        This is a sample website to show how to connect to Databricks SQL using Flask and the Databricks SQL Connector for Python. This is a demo and not intended for production use. Please forgive the rough and boring website.    
+    </p>
+
+    <table id="data" class="table table-striped">
+        <thead>
+            <tr>
+                <th>Schema Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for schema in schemas %}
+                <tr>
+                    <td>{{ schema.databaseName }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <br></br>
+    <br></br>
+    <br></br>
+
+    <h2> Input a SQL Query </h2>
+    <form method="post">
+        <textarea id="query_text" name="query_text" rows=10 cols=120 > </textarea>
+            <br><br>
+        <input type="submit" value="Execute">
+
+    </form>
+    <br><br>
+    <h4>Results: </h4>
+    <table id="data" class="table table-striped">
+        <thead> 
+            {% for header in query_headers %}
+                    <th>{{ header }}</th>
+            {% endfor %}
+        </thead>
+        <tbody>
+            {% for result in query_results %}
+                <tr>
+                    {% for c in result %}
+                    <td>{{ c }}</td>
+                    {% endfor %}
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+
+{% endblock %}
+
+
+
+
+

@@ -1,0 +1,15 @@
+{
+    "default": {
+        "jobs": [
+            {
+                "name": "dbx_job",
+                "existing_cluster_id": "0414-204835-wl2i2hxh",
+                "libraries": [],
+                "max_retries": 0,
+                "spark_python_task": {
+                    "python_file": "app/run.py"
+                }
+            }
+        ]
+    }
+}
