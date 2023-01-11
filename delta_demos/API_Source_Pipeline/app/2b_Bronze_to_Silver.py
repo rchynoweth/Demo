@@ -25,6 +25,10 @@ spark.sql("USE {}".format(schema_name))
 
 # COMMAND ----------
 
+spark.sql("set spark.databricks.delta.schema.autoMerge.enabled=true")
+
+# COMMAND ----------
+
 spark.sql("""
   COPY INTO delta.`/Users/{}/api_weather_demo/silver/batch_sliver_table`
   FROM '/Users/{}/api_weather_demo/raw/*.json'

@@ -115,6 +115,7 @@ def stream_to_azsql(microBatchDF, batchId):
 
 # COMMAND ----------
 
+user_name = "ryan.chynoweth@databricks.com"
 azsql_ckpt = "/Users/{}/api_weather_demo/ckpt/azsql_ckpt".format(user_name)
 dbutils.fs.rm(azsql_ckpt, True)
 
@@ -130,14 +131,6 @@ dbutils.fs.rm(azsql_ckpt, True)
 # COMMAND ----------
 
 time.sleep(60)
-
-# COMMAND ----------
-
-display(spark.read
- .format("jdbc")
- .option("url", jdbcUrl)
- .option("dbtable", "streaming_silver_weather_main")
- .load())
 
 # COMMAND ----------
 

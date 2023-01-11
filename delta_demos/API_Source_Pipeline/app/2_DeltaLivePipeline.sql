@@ -25,10 +25,6 @@ SELECT city_name, date, avg(percieved_temp) as avg_percieved_temp, avg(humidity)
 
 -- COMMAND ----------
 
-
-
--- COMMAND ----------
-
 CREATE OR REFRESH LIVE TABLE bronze_weather_dlt_sys
 COMMENT "The raw data from weather api"
 AS SELECT sys.country, sys.id, sys.sunrise, from_unixtime(sys.sunrise) as sunrise_datetime, sys.sunset, from_unixtime(sys.sunset) as sunset_datetime, sys.type FROM live.raw_weather_dlt

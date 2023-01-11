@@ -70,6 +70,18 @@ city_list = [(47.6, -122.3, 'Seattle'), (33.44, -94.04, 'Texarkana'), (37.6, -12
 
 # COMMAND ----------
 
+# batch
+# does not track files
+df = spark.read.... # all files 
+
+# stream
+# tracks new files
+df = spark.readStream 
+
+df.writeStream..format('json', 'csv', 'delta')
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Option 1 - Save directly to Delta
 
