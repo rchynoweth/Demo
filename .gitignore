@@ -4,15 +4,15 @@ __pycache__/
 *$py.class
 
 
-delta_demos/KafkaStreaming/sfdata-ryan.json
-rsa_key.p8
-rsa_key.pub
+
 
 *.vscode
 *.conf 
 *.DS_Store
 *.jar
 *.zip
+delta_demos/LocalSpark/delta-sharing-server-0.5.3/conf/core-site.xml
+delta_demos/LocalSpark/delta-sharing-server-0.5.3/conf/delta-sharing-server.yaml
 # C extensions
 *.so
 
