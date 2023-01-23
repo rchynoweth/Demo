@@ -1,0 +1,6 @@
+{
+    "shareCredentialsVersion":1,
+    "bearerToken":"<Token>",
+    "endpoint":"https://<Azure Region>.azuredatabricks.net/api/2.0/delta-sharing/metastores/<GUID>",
+    "expirationTime":"2023-01-20T19:57:30.933Z"
+}

@@ -1,5 +1,7 @@
 # The format version of this config file
 version: 1
+authorization:
+  bearerToken: <token>
 # Config shares/schemas/tables to share
 shares:
 - name: "share1"

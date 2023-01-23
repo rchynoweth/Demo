@@ -4,7 +4,7 @@ This directory demonstrates how to connect to and read Delta Lake tables stored 
 
 This shows how users are able to access their data without using Databricks compute.  
 
-## Instructions 
+## OSS Spark Instructions 
 
 1. Create a Python 3.9 Virtual Environment and install delta lake and pyspark
     ```
@@ -32,25 +32,28 @@ This shows how users are able to access their data without using Databricks comp
 
 ## Delta Sharing 
 
-- [Create a Delta Sharing Server](https://github.com/delta-io/delta-sharing#delta-sharing-reference-server)  
-- [GitHub](https://github.com/delta-io/delta-sharing)
-- [Web Page](https://delta.io/sharing)
+Create a Delta Sharing Server using ADLS Gen2 and access that data using open source Apache Spark. 
 
 
-Creating a Server Notes:
+
+Instructions 
 1. Download the package from [GitHub](https://github.com/delta-io/delta-sharing/releases)
 1. Unpack zip file and edit the `conf/delta-sharing-server.yaml` file. 
-1. Add the following to the yaml file. This enforces authentication. To allow for many users there should be a proxy in front of it to ensure proper access. 
+1. Provide the required details and add the following to the yaml file. 
     ```
     authorization:
     bearerToken: <token>
     ```
 1. Start the server `bin/delta-sharing-server -- --config <the-server-config-yaml-file>`  
-1. Pre-built Docker 
+1. Run [`run_delta_share.py`](delta_demos/LocalSpark/run_delta_share.py).
+
+Resources
+- [Create a Delta Sharing Server](https://github.com/delta-io/delta-sharing#delta-sharing-reference-server)  
+- [GitHub](https://github.com/delta-io/delta-sharing)
+- [Web Page](https://delta.io/sharing)
+- Pre-built Docker (not tested)
     ```
     docker run -p <host-port>:<container-port> \
     --mount type=bind,source=<the-server-config-yaml-file>,target=/config/delta-sharing-server-config.yaml \
     deltaio/delta-sharing-server:0.5.0 -- --config /config/delta-sharing-server-config.yaml
     ```
-
-1. 

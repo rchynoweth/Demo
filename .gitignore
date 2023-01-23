@@ -13,6 +13,8 @@ __pycache__/
 *.zip
 delta_demos/LocalSpark/delta-sharing-server-0.5.3/conf/core-site.xml
 delta_demos/LocalSpark/delta-sharing-server-0.5.3/conf/delta-sharing-server.yaml
+oss-share.share
+databricks_config.share
 # C extensions
 *.so
 
