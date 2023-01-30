@@ -13,7 +13,7 @@ This shows how users are able to access their data without using Databricks comp
     conda activate pyspark_end
 
     pip install pyspark 
-    pip install delta-spark 
+    pip install delta-sharing 
     ```
 
 1. Add secrets to config.conf (see example below). 
