@@ -44,6 +44,26 @@ Instructions
     authorization:
     bearerToken: <token>
     ```
+1. Add a `core-site.xml` file to add the account key required for delta sharing authentication with cloud storage.  
+    ```
+    <?xml version="1.0"?>
+    <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
+    <configuration>
+    <property>
+        <name>fs.azure.account.auth.type.YOUR-ACCOUNT-NAME.dfs.core.windows.net</name>
+        <value>SharedKey</value>
+        <description>
+        </description>
+    </property>
+    <property>
+        <name>fs.azure.account.key.YOUR-ACCOUNT-NAME.dfs.core.windows.net</name>
+        <value>YOUR-ACCOUNT-KEY</value>
+        <description>
+        The secret password. Never share these.
+        </description>
+    </property>
+    </configuration>
+    ```
 1. Start the server `bin/delta-sharing-server -- --config <the-server-config-yaml-file>`  
 1. Run [`run_delta_share.py`](delta_demos/LocalSpark/run_delta_share.py).
 
