@@ -4,8 +4,8 @@ __pycache__/
 *$py.class
 
 
-
-
+*.databricks
+*.metals
 *.vscode
 *.conf 
 *.DS_Store
