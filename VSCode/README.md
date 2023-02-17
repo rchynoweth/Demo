@@ -9,3 +9,4 @@ Example Console Output:
 
 Tips:
 - If you have an existing repo that you are making your Sync Destination then make sure that you pull all changes inside of Databricks. Otherwise, it may have a conflict of you attempting to commit a file that has already existed. 
+- The git operations that happen locally do not take place in Databricks. So if I push changes from VS Code then I will need to pull them in Databricks. 
