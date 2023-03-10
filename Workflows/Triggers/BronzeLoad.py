@@ -16,43 +16,65 @@
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC ## Set up
+
+# COMMAND ----------
+
+from pyspark.sql.functions import *
+
+# COMMAND ----------
+
+# widget parameters 
 dbutils.widgets.text("catalog", "")
 dbutils.widgets.text("schema", "")
-dbutils.widgets.text("storage_credential_name", "")
-dbutils.widgets.text("external_location_name", "")
-dbutils.widgets.text("azure_storage_url", "")
+dbutils.widgets.text("aws_s3_url", "")
 
 catalog = dbutils.widgets.get("catalog")
 schema = dbutils.widgets.get("schema")
-storage_credential_name = dbutils.widgets.get("storage_credential_name")
-external_location_name = dbutils.widgets.get("external_location_name")
-azure_storage_url = dbutils.widgets.get("azure_storage_url")
+aws_s3_url = dbutils.widgets.get("aws_s3_url")
 
-# COMMAND ----------
-
-print(azure_storage_url)
-
-# COMMAND ----------
-
-spark.sql(f"use catalog {catalog}")
-spark.sql(f"use schema {schema}")
-
-# COMMAND ----------
-
+# variables 
 input_data_path = "/databricks-datasets/iot/iot_devices.json"
 
 # COMMAND ----------
 
-spark.sql("""
-CREATE EXTERNAL LOCATION {}
-URL '{}'
-WITH (STORAGE CREDENTIAL `{}`);
-""".format(external_location_name, azure_storage_url, storage_credential_name))
+spark.sql(f"create catalog if not exists {catalog}")
+spark.sql(f"use catalog {catalog}")
+spark.sql(f"create schema if not exists {schema}")
+spark.sql(f"use schema {schema}")
 
 # COMMAND ----------
 
-df = spark.read.json(input_data_path)
-display(df)
+# MAGIC %md
+# MAGIC ## Create Bronze Table with Auto Loader
+
+# COMMAND ----------
+
+schema_path = f"/tmp/{catalog}/bronze_schema"
+checkpoint_path = f"/tmp/{catalog}/bronze_ckpt"
+file_path = f"{aws_s3_url}/iot/*.json"
+
+# COMMAND ----------
+
+# Configure Auto Loader to ingest JSON data to a Delta table
+streaming_query = (spark.readStream
+  .format("cloudFiles")
+  .option("cloudFiles.format", "json")
+  .option("cloudFiles.schemaLocation", schema_path)
+  .load(file_path)
+  .select("*", input_file_name().alias("source_file"), current_timestamp().alias("processing_time"))
+  .writeStream
+  .option("checkpointLocation", checkpoint_path)
+  .trigger(availableNow=True)
+  .toTable("bronze_iot_demo"))
+
+streaming_query.awaitTermination() # wait for stream to complete before continuing 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from bronze_iot_demo
 
 # COMMAND ----------
 
