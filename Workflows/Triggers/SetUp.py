@@ -67,7 +67,3 @@ def copy_file():
 # COMMAND ----------
 
 copy_file()
-
-# COMMAND ----------
-
-
