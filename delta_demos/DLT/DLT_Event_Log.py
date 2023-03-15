@@ -11,7 +11,19 @@
 # MAGIC   - Please note that the `dlt_pipielines` directory can be named anything you wish and can have any number of subdirectories.
 # MAGIC   - Do not put a pipeline location at the container base directory and always provide an external location. 
 # MAGIC   
-# MAGIC - 
+# MAGIC Data Notes  
+# MAGIC   * The `details` column contains metadata about each Event sent to the Event Log. There are different fields depending on what type of Event it is. Some examples include:
+# MAGIC   * `user_action` Events occur when taking actions like creating the pipeline
+# MAGIC   * `flow_definition` Events occur when a pipeline is deployed or updated and have lineage, schema, and execution plan information
+# MAGIC     * `output_dataset` and `input_datasets` - output table/view and its upstream table(s)/view(s)
+# MAGIC     * `flow_type` - whether this is a complete or append flow
+# MAGIC     * `explain_text` - the Spark explain plan
+# MAGIC   * `flow_progress` Events occur when a data flow starts running or finishes processing a batch of data
+# MAGIC     * `metrics` - currently contains `num_output_rows`
+# MAGIC     * `data_quality` - contains an array of the results of the data quality rules for this particular dataset
+# MAGIC       * `dropped_records`
+# MAGIC       * `expectations`
+# MAGIC         * `name`, `dataset`, `passed_records`, `failed_records`
 # MAGIC 
 # MAGIC 
 # MAGIC Public Resources: 
@@ -19,77 +31,99 @@
 
 # COMMAND ----------
 
-event_log_path = "dbfs:/pipelines/878e907e-2a8f-43e2-a056-a90402977cec"
+dbutils.widgets.text("schema_name", "")
+schema_name = dbutils.widgets.get("schema_name")
 
 # COMMAND ----------
 
-dbutils.fs.ls(path+"/system/events")
-
-# COMMAND ----------
-
-df = spark.read.load(path+"/system/events")
-df.createOrReplaceTempView("event_log_raw")
+spark.sql(f"use {schema_name}")
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from event_log_raw 
+# MAGIC select * from raw_event_log
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select distinct event_type from event_log_raw
+# MAGIC SELECT
+# MAGIC   row_expectations.dataset as dataset,
+# MAGIC   row_expectations.name as expectation,
+# MAGIC   SUM(row_expectations.passed_records) as passing_records,
+# MAGIC   SUM(row_expectations.failed_records) as failing_records
+# MAGIC FROM
+# MAGIC   (
+# MAGIC     SELECT
+# MAGIC       explode(
+# MAGIC         from_json(
+# MAGIC           details :flow_progress :data_quality :expectations,
+# MAGIC           "array<struct<name: string, dataset: string, passed_records: int, failed_records: int>>"
+# MAGIC         )
+# MAGIC       ) row_expectations
+# MAGIC     FROM
+# MAGIC       raw_event_log
+# MAGIC     WHERE
+# MAGIC       event_type = 'flow_progress'
+# MAGIC       AND origin.update_id = '${latest_update.id}'
+# MAGIC   )
+# MAGIC GROUP BY
+# MAGIC   row_expectations.dataset,
+# MAGIC   row_expectations.name
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from event_log_raw where event_type in ('flow_definition', 'dataset_definition')
-# MAGIC   and timestamp >= '2022-10-26T16:00:00'
-# MAGIC order by timestamp
+# MAGIC select pipeline_id, flow_id, flow_name, sum(num_output_rows) as num_output_rows, sum(dropped_records) as dropped_records
+# MAGIC from rac_demo_db.flow_progress_details
+# MAGIC group by pipeline_id, flow_id, flow_name
+
+# COMMAND ----------
+
+# DBTITLE 1,Lineage
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC   details:flow_definition.output_dataset,
+# MAGIC   details:flow_definition.input_datasets,
+# MAGIC   details:flow_definition.flow_type,
+# MAGIC   details:flow_definition.schema,
+# MAGIC   details:flow_definition
+# MAGIC FROM demo_dlt_loans_system_event_log_raw
+# MAGIC WHERE details:flow_definition IS NOT NULL
+# MAGIC ORDER BY timestamp
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC select * from event_log_raw where event_type = 'flow_progress'
-# MAGIC   and timestamp >= '2022-10-26T16:00:00'
+# MAGIC 
+# MAGIC select *
+# MAGIC 
+# MAGIC from raw_event_log
+# MAGIC where origin.flow_name is not null
 # MAGIC order by timestamp
 
 # COMMAND ----------
 
 # MAGIC %sql
 # MAGIC SELECT
-# MAGIC   flow_id,
-# MAGIC --   name as expectation,
-# MAGIC   SUM(num_output_rows) as passing_records,
-# MAGIC   SUM(dropped_records) as failing_records
+# MAGIC   row_expectations.dataset as dataset,
+# MAGIC   row_expectations.name as expectation,
+# MAGIC   SUM(row_expectations.passed_records) as passing_records,
+# MAGIC   SUM(row_expectations.failed_records) as failing_records
 # MAGIC FROM
 # MAGIC   (
-# MAGIC     SELECT 
-# MAGIC       timestamp 
-# MAGIC     , origin.pipeline_id
-# MAGIC     , origin.pipeline_name
-# MAGIC     , origin.cluster_id
-# MAGIC     , origin.update_id
-# MAGIC     , origin.flow_id
-# MAGIC     , origin.flow_name
-# MAGIC     , origin.batch_id
-# MAGIC     , origin.table_id
-# MAGIC     , origin.table_name
-# MAGIC     , details:flow_progress:status 
-# MAGIC     , details:flow_progress:metrics
-# MAGIC     , details:flow_progress:metrics:num_output_rows
-# MAGIC     , details:flow_progress:data_quality
-# MAGIC     , details:flow_progress:data_quality:dropped_records
-# MAGIC     , details:flow_progress:dataset
-# MAGIC     , details:flow_progress:expectation
+# MAGIC     SELECT
+# MAGIC       explode(
+# MAGIC         from_json(
+# MAGIC           details :flow_progress :data_quality :expectations,
+# MAGIC           "array<struct<name: string, dataset: string, passed_records: int, failed_records: int>>"
+# MAGIC         )
+# MAGIC       ) row_expectations
 # MAGIC     FROM
 # MAGIC       event_log_raw
 # MAGIC     WHERE
-# MAGIC       event_type = 'flow_progress' and timestamp >= '2022-10-26T16:00:00'
+# MAGIC       event_type = 'flow_progress'
+# MAGIC       AND origin.update_id = '${latest_update.id}'
 # MAGIC   )
 # MAGIC GROUP BY
-# MAGIC   flow_id
-
-# COMMAND ----------
-
-
+# MAGIC   row_expectations.dataset,
+# MAGIC   row_expectations.name
