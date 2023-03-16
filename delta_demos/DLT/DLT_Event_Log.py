@@ -46,60 +46,7 @@ spark.sql(f"use {schema_name}")
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC SELECT
-# MAGIC   row_expectations.dataset as dataset,
-# MAGIC   row_expectations.name as expectation,
-# MAGIC   SUM(row_expectations.passed_records) as passing_records,
-# MAGIC   SUM(row_expectations.failed_records) as failing_records
-# MAGIC FROM
-# MAGIC   (
-# MAGIC     SELECT
-# MAGIC       explode(
-# MAGIC         from_json(
-# MAGIC           details :flow_progress :data_quality :expectations,
-# MAGIC           "array<struct<name: string, dataset: string, passed_records: int, failed_records: int>>"
-# MAGIC         )
-# MAGIC       ) row_expectations
-# MAGIC     FROM
-# MAGIC       raw_event_log
-# MAGIC     WHERE
-# MAGIC       event_type = 'flow_progress'
-# MAGIC       AND origin.update_id = '${latest_update.id}'
-# MAGIC   )
-# MAGIC GROUP BY
-# MAGIC   row_expectations.dataset,
-# MAGIC   row_expectations.name
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC select pipeline_id, flow_id, flow_name, sum(num_output_rows) as num_output_rows, sum(dropped_records) as dropped_records
-# MAGIC from rac_demo_db.flow_progress_details
-# MAGIC group by pipeline_id, flow_id, flow_name
-
-# COMMAND ----------
-
-# DBTITLE 1,Lineage
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC   details:flow_definition.output_dataset,
-# MAGIC   details:flow_definition.input_datasets,
-# MAGIC   details:flow_definition.flow_type,
-# MAGIC   details:flow_definition.schema,
-# MAGIC   details:flow_definition
-# MAGIC FROM demo_dlt_loans_system_event_log_raw
-# MAGIC WHERE details:flow_definition IS NOT NULL
-# MAGIC ORDER BY timestamp
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC 
-# MAGIC select *
-# MAGIC 
-# MAGIC from raw_event_log
-# MAGIC where origin.flow_name is not null
-# MAGIC order by timestamp
+# MAGIC select * from user_action_details
 
 # COMMAND ----------
 
@@ -127,3 +74,17 @@ spark.sql(f"use {schema_name}")
 # MAGIC GROUP BY
 # MAGIC   row_expectations.dataset,
 # MAGIC   row_expectations.name
+
+# COMMAND ----------
+
+spark.sql('use rac_demo_db')
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select distinct * from flow_progress_expectations
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from cluster_resource_details
