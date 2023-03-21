@@ -88,6 +88,7 @@ detail_cols = [
   , 'origin.flow_id'
   , 'origin.flow_name'
   , 'timestamp'
+  , to_date('timestamp').alias('date')
   , 'bronze_load_datetime'
   , 'event_type'
   , 'details'
@@ -154,6 +155,45 @@ def completed_flows():
 
 # COMMAND ----------
 
+# DBTITLE 1,Daily Flow Agg
+daily_flow_agg_group_cols = [
+  'pipeline_id'
+  , 'pipeline_name'
+  , 'date'
+]
+
+daily_flow_agg_select_cols = daily_flow_agg_group_cols + [
+  'num_output_rows'
+  , 'num_upserted_rows'
+  , 'num_deleted_rows'
+  , 'dropped_records'
+]
+
+daily_flow_agg_sum_cols = [
+   sum('num_output_rows').alias('num_output_rows')
+  , sum('num_upserted_rows').alias('num_upserted_rows')
+  , sum('num_deleted_rows').alias('num_deleted_rows')
+  , sum('dropped_records').alias('dropped_records') 
+]
+
+@dlt.table(name='daily_flow_agg', comment="{'quality':'gold'}")
+def daily_flow_agg():
+  return (dlt.read('flow_progress_details')
+          .select(daily_flow_agg_select_cols)
+          .groupBy(daily_flow_agg_group_cols)
+          .agg(*daily_flow_agg_sum_cols)
+         )
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
+
+
+# COMMAND ----------
+
 # DBTITLE 1,Expectations
 flow_expectation_cols = [
   'id'
@@ -162,6 +202,8 @@ flow_expectation_cols = [
   , 'flow_id'
   , 'flow_name'
   , 'timestamp'
+  , date_trunc("hour", 'timestamp').alias('hourly_timestamp')
+  , to_date('timestamp').alias('date')
   , 'bronze_load_datetime'
   , 'event_type'
   , 'details'
@@ -180,12 +222,42 @@ def flow_progress_expectations():
 
 # COMMAND ----------
 
+# DBTITLE 1,Daily Expectation Agg
+daily_expectations_agg_group_cols = [
+  'pipeline_id'
+  , 'pipeline_name'
+  , 'date'
+  , 'name'
+  , 'dataset'
+]
+
+daily_expectations_agg_select_cols = daily_expectations_agg_group_cols + [
+  'passed_records'
+  , 'failed_records'
+]
+
+daily_expectations_agg_sum_cols = [
+   sum('passed_records').alias('passed_records')
+  , sum('failed_records').alias('failed_records')
+]
+
+@dlt.table(name='daily_expectations_agg', comment="{'quality':'gold'}")
+def daily_expectations_agg():
+  return (dlt.read('flow_progress_expectations')
+          .select(daily_expectations_agg_select_cols)
+          .groupBy(daily_expectations_agg_group_cols)
+          .agg(*daily_expectations_agg_sum_cols)
+         )
+
+# COMMAND ----------
+
 # DBTITLE 1,Cluster Resources
 cluster_resource_cols = [
   'id'
   , 'origin.pipeline_id'
   , 'origin.pipeline_name'
   , 'timestamp'
+  , date_trunc("hour", 'timestamp').alias('hourly_timestamp')
   , 'bronze_load_datetime'
   , 'event_type'
   , 'details'
@@ -246,4 +318,77 @@ def flow_progress_origin():
           .filter(col('event_type') == 'flow_progress')
           .select(origin_cols)
           .withColumn("silver_load_datetime", current_timestamp())
+         )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Reporting Tables
+
+# COMMAND ----------
+
+# DBTITLE 1,Hourly Expectations
+hourly_expectations_agg_group_cols = [
+  'pipeline_id'
+  , 'pipeline_name'
+  , 'hourly_timestamp'
+  , 'name'
+  , 'dataset'
+]
+
+hourly_expectations_agg_select_cols = hourly_expectations_agg_group_cols + [
+  'passed_records'
+  , 'failed_records'
+]
+
+hourly_expectations_agg_sum_cols = [
+   sum('passed_records').alias('passed_records')
+  , sum('failed_records').alias('failed_records')
+]
+
+@dlt.table(name='hourly_expectations_agg', comment="{'quality':'gold'}")
+def hourly_expectations_agg():
+  return (dlt.read('flow_progress_expectations')
+          .select(hourly_expectations_agg_select_cols)
+          .groupBy(hourly_expectations_agg_group_cols)
+          .agg(*hourly_expectations_agg_sum_cols)
+         )
+
+# COMMAND ----------
+
+# DBTITLE 1,Cluster Resources
+hourly_cluster_resources_agg_group_cols = [
+  'pipeline_id'
+  , 'pipeline_name'
+  , 'hourly_timestamp'
+]
+
+hourly_cluster_resources_agg_select_cols = hourly_cluster_resources_agg_group_cols + [
+   'summary_duration_ms'
+  , 'num_task_slots'
+  , 'avg_num_task_slots'
+  , 'avg_task_slot_utilization'
+  , 'num_executors'
+  , 'avg_num_queued_tasks'
+]
+
+hourly_cluster_resources_agg_sum_cols = [
+   (avg('summary_duration_ms')/1000).alias('avg_summary_duration_seconds')
+  , max('num_task_slots').alias('max_task_slots')
+  , min('num_task_slots').alias('min_task_slots')
+  , median('avg_num_task_slots').alias('median_avg_num_task_slots')
+  , median('avg_task_slot_utilization').alias('median_avg_task_slot_utilization')
+  , max('num_executors').alias('max_num_executors')
+  , min('num_executors').alias('min_num_executors')
+  , avg('num_executors').alias('avg_num_executors')
+  , median('num_executors').alias('median_num_executors')
+  , median('avg_num_queued_tasks').alias('median_avg_num_queued_tasks')
+]
+
+@dlt.table(name='hourly_cluster_resource_agg', comment="{'quality':'gold'}")
+def hourly_cluster_resource_agg():
+  return (dlt.read('cluster_resource_details')
+          .select(hourly_cluster_resources_agg_select_cols)
+          .groupBy(hourly_cluster_resources_agg_group_cols)
+          .agg(*hourly_cluster_resources_agg_sum_cols)
          )
