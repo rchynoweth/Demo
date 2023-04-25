@@ -1,4 +1,8 @@
 # Databricks notebook source
+import pyspark.sql.functions import udf
+
+# COMMAND ----------
+
 # DBTITLE 1,Import libs
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
