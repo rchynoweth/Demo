@@ -1,4 +1,9 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC NOTE -> This notebook produces forecasts by workspace and Databricks compute SKU. These forecasts can be used to automate anomolous behavior in Databricks consumption (DBUs). Forecasted should be generated weekly and evaluated daily. Forecasts are at the day level. 
+
+# COMMAND ----------
+
 from prophet import Prophet
 from pyspark.sql.functions import *
 import pandas as pd
@@ -8,7 +13,22 @@ from datetime import date
 
 # COMMAND ----------
 
-target_schema = 'ryan_chynoweth_catalog.ryan_chynoweth_schema'
+dbutils.widgets.text('TargetCatalog', '')
+dbutils.widgets.text('TargetSchema', '')
+
+# COMMAND ----------
+
+# target_schema = 'ryan_chynoweth_catalog.ryan_chynoweth_schema'
+target_catalog = dbutils.widgets.get('TargetCatalog')
+target_schema = dbutils.widgets.get('TargetSchema')
+
+# COMMAND ----------
+
+spark.sql(f"create catalog if not exists {target_catalog}")
+
+# COMMAND ----------
+
+spark.sql(f"create schema if not exists {target_catalog}.{target_schema}")
 
 # COMMAND ----------
 
@@ -17,10 +37,6 @@ spark.sql('use catalog system')
 # COMMAND ----------
 
 spark.sql('use schema operational_data')
-
-# COMMAND ----------
-
-display(spark.sql('desc billing_logs'))
 
 # COMMAND ----------
 
@@ -61,7 +77,7 @@ display(df)
 # COMMAND ----------
 
 # DBTITLE 1,Jobs Only Visuals
-df = spark.sql("""
+jobs_df = spark.sql("""
 select account_id
  , workspace_id
  , created_at
@@ -87,36 +103,36 @@ where created_on >= '2021-01-01'
       and tags.JobId is not Null 
 """)
 
-display(df)
+display(jobs_df)
 
 # COMMAND ----------
 
-# DBTITLE 1,Group and save dataframe as table
-prophet_df = df.select(col('created_on').alias('ds'), col('consolidated_sku').alias('sku'), col('machine_hours'), col('dbus'))
+# DBTITLE 1,Group and save dataframe as table - primary forecast data source
+prophet_df = df.select(col('created_on').alias('ds'), col('consolidated_sku').alias('sku'), col('workspace_id'), col('machine_hours'), col('dbus'))
 
 (
   prophet_df
-  .groupBy(col("ds"), col('sku'))
+  .groupBy(col("ds"), col('sku'), col('workspace_id'))
   .agg(sum("dbus").alias("y"))
   .write
   .option("mergeSchema", "true")
   .mode('overwrite')
-  .saveAsTable(f"{target_schema}.dbus_by_date_sku")
+  .saveAsTable(f"{target_catalog}.{target_schema}.dbus_by_date_sku")
 )
-
-# (
-#   prophet_df
-#   .groupBy(col("ds"), col('sku'))
-#   .agg(sum("machine_hours").alias("y"))
-#   .write
-#   .mode('overwrite')
-#   .saveAsTable(f"{target_schema}.machine_hours_by_date_sku")  
-# )
 
 # COMMAND ----------
 
 # DBTITLE 1,Load DBU table as pandas df
-dbu_df = spark.read.table(f"{target_schema}.dbus_by_date_sku")#.toPandas().dropna()
+input_dbu_df = spark.read.table(f"{target_catalog}.{target_schema}.dbus_by_date_sku")
+
+input_dbu_df = input_dbu_df.withColumn("workspace_id", col("workspace_id").cast("string"))
+
+
+# COMMAND ----------
+
+## Drop workspaces/skus that do not have more than 2 rows
+## this is a requirement by the Prophet library. 
+dbu_df = input_dbu_df.groupBy("sku", "workspace_id").count().filter("count > 2").join(input_dbu_df, on=["sku", "workspace_id"], how="inner").drop('count')
 
 # COMMAND ----------
 
@@ -124,6 +140,7 @@ from pyspark.sql.types import *
 
 result_schema =StructType([
   StructField('ds',DateType()),
+  StructField('workspace_id', StringType()),
   StructField('sku',StringType()),
   StructField('y',FloatType()),
   StructField('yhat',FloatType()),
@@ -134,7 +151,6 @@ result_schema =StructType([
 # COMMAND ----------
 
 # DBTITLE 1,Pandas UDF to forecast by SKU
-@pandas_udf( result_schema, PandasUDFType.GROUPED_MAP )
 def generate_forecast( history_pd ):
   
   # TRAIN MODEL AS BEFORE
@@ -173,7 +189,7 @@ def generate_forecast( history_pd ):
   f_pd = forecast_pd[ ['ds','yhat', 'yhat_upper', 'yhat_lower'] ].set_index('ds')
   
   # get relevant fields from history
-  h_pd = history_pd[['ds','sku','y']].set_index('ds')
+  h_pd = history_pd[['ds','workspace_id','sku','y']].set_index('ds')
   
   # join history and forecast
   results_pd = f_pd.join( h_pd, how='left' )
@@ -181,18 +197,21 @@ def generate_forecast( history_pd ):
   
   # get store & item from incoming data set
   results_pd['sku'] = history_pd['sku'].iloc[0]
+  results_pd['workspace_id'] = history_pd['workspace_id'].iloc[0]
   # --------------------------------------
   
   # return expected dataset
-  return results_pd[ ['ds', 'sku', 'y', 'yhat', 'yhat_upper', 'yhat_lower'] ]  
+  return results_pd[ ['ds', 'workspace_id', 'sku', 'y', 'yhat', 'yhat_upper', 'yhat_lower'] ]  
+
+
 
 # COMMAND ----------
 
 # DBTITLE 1,Create and collect forecasts to save as a temp view
 results = (
   dbu_df
-    .groupBy('sku')
-    .apply(generate_forecast)
+    .groupBy('workspace_id','sku')
+    .applyInPandas(generate_forecast, schema=result_schema)
     .withColumn('training_date', current_date() )
     )
 
@@ -202,8 +221,9 @@ results.createOrReplaceTempView('new_forecasts')
 
 # DBTITLE 1,Save raw forecasts as table
 spark.sql(f"""
-create table if not exists {target_schema}.dbu_forecasts (
+create table if not exists {target_catalog}.{target_schema}.dbu_forecasts (
   date date,
+  workspace_id string,
   sku string,
   dbus float,
   dbus_predicted float,
@@ -217,9 +237,10 @@ partitioned by (training_date);
 
 spark.sql(f"""
 -- load data to it
-insert into {target_schema}.dbu_forecasts
+insert into {target_catalog}.{target_schema}.dbu_forecasts
 select 
   ds as date,
+  workspace_id,
   sku,
   y as dbus,
   yhat as dbus_predicted,
@@ -236,6 +257,7 @@ display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -245,7 +267,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
 
 """) 
 )
@@ -257,6 +279,7 @@ display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -266,7 +289,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
     where sku = 'ALL_PURPOSE'
 
 """) 
@@ -279,6 +302,7 @@ display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -288,7 +312,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
     where sku = 'JOBS'
 
 """) 
@@ -301,6 +325,7 @@ display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -310,7 +335,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
     where sku = 'DLT'
 
 """) 
@@ -323,6 +348,7 @@ display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -332,7 +358,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
     where sku = 'SQL'
 
 """) 
@@ -340,11 +366,12 @@ display(
 
 # COMMAND ----------
 
-# DBTITLE 1,MODEL_INFERENCE DBUs
+# DBTITLE 1,Model Inference DBUs
 display(
   spark.sql(f"""
     select 
     date
+    , workspace_id
     , sku
     , dbus
     , case when dbus_predicted < 0 then 0 else dbus_predicted end as dbus_predicted
@@ -354,7 +381,7 @@ display(
     , case when dbus < dbus_predicted_lower then TRUE else FALSE end as lower_anomaly_alert
     , training_date
     
-    from {target_schema}.dbu_forecasts
+    from {target_catalog}.{target_schema}.dbu_forecasts
     where sku = 'MODEL_INFERENCE'
 
 """) 
@@ -366,6 +393,7 @@ display(
 # schema of expected result set
 eval_schema =StructType([
   StructField('training_date', DateType()),
+  StructField('workspace_id', StringType()),
   StructField('sku', StringType()),
   StructField('mae', FloatType()),
   StructField('mse', FloatType()),
@@ -373,13 +401,13 @@ eval_schema =StructType([
   ])
 
 # define udf to calculate metrics
-@pandas_udf( eval_schema, PandasUDFType.GROUPED_MAP )
 def evaluate_forecast( evaluation_pd ):
   
   evaluation_pd = evaluation_pd[evaluation_pd['dbus'].notnull()]
   # get sku in incoming data set
   training_date = evaluation_pd['training_date'].iloc[0]
   sku = evaluation_pd['sku'].iloc[0]
+  workspace_id = evaluation_pd['workspace_id'].iloc[0]
   
   # calulate evaluation metrics
   mae = mean_absolute_error( evaluation_pd['dbus'], evaluation_pd['dbus_predicted'] )
@@ -387,16 +415,17 @@ def evaluate_forecast( evaluation_pd ):
   rmse = sqrt( mse )
   
   # assemble result set
-  results = {'training_date':[training_date], 'sku':[sku], 'mae':[mae], 'mse':[mse], 'rmse':[rmse]}
+  results = {'training_date':[training_date], 'workspace_id':[workspace_id], 'sku':[sku], 'mae':[mae], 'mse':[mse], 'rmse':[rmse]}
   return pd.DataFrame.from_dict( results )
+
 
 # calculate metrics
 results = (
   spark.read
-    .table(f'{target_schema}.dbu_forecasts')
-    .select('training_date', 'sku', 'dbus', 'dbus_predicted')
-    .groupBy('training_date', 'sku')
-    .apply(evaluate_forecast)
+    .table(f'{target_catalog}.{target_schema}.dbu_forecasts')
+    .select('training_date', 'workspace_id', 'sku', 'dbus', 'dbus_predicted')
+    .groupBy('training_date', 'workspace_id', 'sku')
+    .applyInPandas(evaluate_forecast, schema=eval_schema)
     )
 results.createOrReplaceTempView('new_forecast_evals')
 
@@ -410,7 +439,8 @@ display(
 
 # DBTITLE 1,Save evaluation of forecasts to table
 spark.sql(f"""
-create table if not exists {target_schema}.dbu_forecast_evals (
+create table if not exists {target_catalog}.{target_schema}.dbu_forecast_evals (
+  workspace_id string,
   sku string,
   mae float,
   mse float,
@@ -422,7 +452,7 @@ partitioned by (training_date);
 """)
 
 spark.sql(f"""
-insert into {target_schema}.dbu_forecast_evals
+insert into {target_catalog}.{target_schema}.dbu_forecast_evals
 select
   sku,
   mae,
@@ -435,7 +465,7 @@ from new_forecast_evals;
 # COMMAND ----------
 
 display(
-  spark.read.table(f'{target_schema}.dbu_forecast_evals')
+  spark.read.table(f'{target_catalog}.{target_schema}.dbu_forecast_evals')
 )
 
 # COMMAND ----------
