@@ -145,14 +145,7 @@ def generate_forecast( history_pd ):
   history_pd = history_pd.dropna()
   
   # configure the model
-  model = Prophet(
-    interval_width=0.95,
-    growth='linear',
-    daily_seasonality=False,
-    weekly_seasonality=True,
-    yearly_seasonality=True,
-    seasonality_mode='multiplicative'
-    )
+  model = Prophet( interval_width=0.85 )
   
   # train the model
   model.fit( history_pd )
@@ -230,14 +223,7 @@ def generate_forecast( history_pd ):
   history_pd = history_pd.dropna()
   
   # configure the model
-  model = Prophet(
-    interval_width=0.95,
-    growth='linear',
-    daily_seasonality=False,
-    weekly_seasonality=True,
-    yearly_seasonality=True,
-    seasonality_mode='multiplicative'
-    )
+  model = Prophet( interval_width=0.85 )
   
   # train the model
   model.fit( history_pd )
@@ -277,10 +263,6 @@ def generate_forecast( history_pd ):
 
 # COMMAND ----------
 
-spark.sql(f'drop table if exists {target_catalog}.{target_schema}.dbu_forecasts_28evals')
-
-# COMMAND ----------
-
 # DBTITLE 1,28 day forecast
 results = (dbu_df.filter(dbu_df.ds < date28)
     .groupBy('workspace_id','sku')
@@ -293,7 +275,7 @@ out = (results.filter(col('ds') >= date28).drop('y')
         .join(dbu_df.select(col("y"), col("ds"), col("workspace_id"), col("sku")), ["ds", "workspace_id", "sku"], "left")
   )
 
-out.write.mode('append').saveAsTable(f'{target_catalog}.{target_schema}.dbu_forecasts_28evals')
+out.write.mode('overwrite').saveAsTable(f'{target_catalog}.{target_schema}.dbu_forecasts_28evals')
 
 # COMMAND ----------
 

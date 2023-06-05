@@ -4,8 +4,10 @@
 
 select *
   , case when y >= yhat_lower AND y <= yhat_upper THEN true ELSE false END AS on_trend
+  , DATEDIFF(ds, max_forecast_date) AS diff_days
+
 from ryan_chynoweth_catalog.ryan_chynoweth_schema.dbu_forecasts_28evals 
-order by ds desc
+order by ds asc
 
 -- COMMAND ----------
 
@@ -14,9 +16,11 @@ order by ds desc
 
 select *
   , case when y >= yhat_lower AND y <= yhat_upper THEN true ELSE false END AS on_trend
+    , DATEDIFF(ds, max_forecast_date) AS diff_days
+
 from ryan_chynoweth_catalog.ryan_chynoweth_schema.dbu_forecasts_7evals 
-where max_forecast_date = '2023-05-10'
-order by ds desc
+-- where max_forecast_date = '2023-05-10'
+order by ds asc
 
 -- COMMAND ----------
 

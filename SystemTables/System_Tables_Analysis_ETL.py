@@ -159,14 +159,7 @@ def generate_forecast( history_pd ):
   history_pd = history_pd.dropna()
   
   # configure the model
-  model = Prophet(
-    interval_width=0.95,
-    growth='linear',
-    daily_seasonality=False,
-    weekly_seasonality=True,
-    yearly_seasonality=True,
-    seasonality_mode='multiplicative'
-    )
+  model = Prophet( interval_width=0.85 )
   
   # train the model
   model.fit( history_pd )
@@ -176,7 +169,7 @@ def generate_forecast( history_pd ):
   # --------------------------------------
   # make predictions
   future_pd = model.make_future_dataframe(
-    periods=90, 
+    periods=28, 
     freq='d', 
     include_history=True
     )
