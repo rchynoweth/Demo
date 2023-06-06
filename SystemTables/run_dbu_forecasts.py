@@ -63,7 +63,7 @@ def evaluate_forecast_udf(evaluation_pd):
 # COMMAND ----------
 
 # DBTITLE 1,Read data from System table
-df = dpf.load_data(spark=spark).filter(col('workspace_id') == '6051921418418893')
+df = dpf.load_consolidated_sku_data(spark=spark).filter(col('workspace_id') == '6051921418418893')
 display(df)
 
 # COMMAND ----------
