@@ -14,7 +14,7 @@
 # COMMAND ----------
 
 from pyspark.sql.functions import *
-from lib.dbu_prophet_forecast import DBUProphetForecast
+from libs.dbu_prophet_forecast import DBUProphetForecast
 
 # COMMAND ----------
 
