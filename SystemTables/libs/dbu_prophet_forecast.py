@@ -39,6 +39,17 @@ class DBUProphetForecast():
       StructField('yhat_lower',FloatType())
       ])
     
+    # Training output schema 
+    self.dollar_dbu_forecast_result_schema = StructType([
+      StructField('ds',DateType()),
+      # dev environment only has 1 workspace. We may want to remove workspace_id for actual customers forecasting at the account level
+      StructField('workspace_id', StringType()), 
+      StructField('y',FloatType()),
+      StructField('yhat',FloatType()),
+      StructField('yhat_upper',FloatType()),
+      StructField('yhat_lower',FloatType())
+      ])
+    
     # Evaluation output schema 
     self.eval_schema =StructType([
       StructField('training_date', DateType()),
@@ -48,7 +59,7 @@ class DBUProphetForecast():
       StructField('mse', FloatType()),
       StructField('rmse', FloatType())
       ])
-    
+    # Evaluation output schema 
     self.analysis_eval_schema = StructType([
       StructField('training_date', DateType()),
       StructField('workspace_id', StringType()),
@@ -168,6 +179,43 @@ class DBUProphetForecast():
 
     return results_pd[ ['ds', 'workspace_id', 'sku', 'y', 'yhat', 'yhat_upper', 'yhat_lower'] ]  
 
+  def generate_dollar_dbu_forecast(self, history_pd):
+    """
+    Function to generate forecasts 
+
+    NOTE: Pandas UDFs inside classes must be static 
+    """
+    # remove missing values (more likely at day-store-item level)
+    history_pd = history_pd.dropna()
+    
+    # train and configure the model
+    model = Prophet( interval_width=self.interval_width )
+    model.fit( history_pd )
+
+    # make predictions
+    future_pd = model.make_future_dataframe(
+      periods=self.forecast_periods, 
+      freq=self.forecast_frequency, 
+      include_history=self.include_history
+      )
+    forecast_pd = model.predict( future_pd )  
+    
+    # ASSEMBLE EXPECTED RESULT SET
+    # --------------------------------------
+    # get relevant fields from forecast
+    f_pd = forecast_pd[ ['ds','yhat', 'yhat_upper', 'yhat_lower'] ].set_index('ds')
+    
+    # get relevant fields from history
+    h_pd = history_pd[['ds','workspace_id','y']].set_index('ds')
+    
+    # join history and forecast
+    results_pd = f_pd.join( h_pd, how='left' )
+    results_pd.reset_index(level=0, inplace=True)
+    
+    # get workspace id from incoming data set
+    results_pd['workspace_id'] = history_pd['workspace_id'].iloc[0]
+
+    return results_pd[ ['ds', 'workspace_id', 'y', 'yhat', 'yhat_upper', 'yhat_lower'] ]  
 
 
   def evaluate_forecast(self, evaluation_pd):
