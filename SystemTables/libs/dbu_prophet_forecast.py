@@ -50,39 +50,60 @@ class DBUProphetForecast():
       ])
     
     self.generate_forecast_udf = udf(self.generate_forecast)
-  
-  def load_consolidated_sku_data(self, spark):
+
+  def load_data(self, spark):
     """
     Load data from system.operational_data.billing_logs
     """
-    df = (
+    return (
       spark.table("system.operational_data.billing_logs")
       .withColumn("YearMonth", expr('date_format(created_at, "yyyy-MM")'))
-      .withColumn("consolidated_sku",
-                      when(col("sku").contains("ALL_PURPOSE"), "ALL_PURPOSE")
-                      .when(col("sku").contains("JOBS"), "JOBS")
-                      .when(col("sku").contains("DLT"), "DLT")
-                      .when(col("sku").contains("SQL"), "SQL")
-                      .when(col("sku").contains("INFERENCE"), "MODEL_INFERENCE")
-                      .otherwise("OTHER"))
       .filter(col("created_on") >= "2021-01-01")
+      .select("account_id", "workspace_id", "created_at", "created_on"
+        , "YearMonth", "tags.Creator", "compute_id", "tags.ClusterName", "compute_size"
+        , "sku", "dbus", "machine_hours" , "tags.SqlEndpointId", "tags.ResourceClass"
+        , "tags.JobId", "tags.RunName", "tags.ModelName", "tags.ModelVersion", "tags.ModelStage")
       )
 
-    return (df.select("account_id", "workspace_id", "created_at", "created_on"
-      , "YearMonth", "tags.Creator", "compute_id", "tags.ClusterName", "compute_size"
-      , "sku", "consolidated_sku", "dbus", "machine_hours" , "tags.SqlEndpointId", "tags.ResourceClass"
-      , "tags.JobId", "tags.RunName", "tags.ModelName", "tags.ModelVersion", "tags.ModelStage"
-      ) )
-  
+
   def transform_data(self, df):
+    """
+    Transforms data with little transforms. Keeping the system SKU as is very better cost estimates. 
+    """
+    df = df.select(col('created_on').alias('ds'), 
+                   col('sku'), 
+                   col('workspace_id').cast("string"), 
+                   col('dbus')
+                  )
+      
+    group_df = (
+      df
+      .groupBy(col("ds"), col('sku'), col('workspace_id'))
+      .agg(sum('dbus').alias("y"))
+      )
+      
+    # filter out sku/workspaces with not enough data
+    # prophet requires at least 2 rows, we will arbitrarily use 10 rows as min
+    out = group_df.groupBy("sku", "workspace_id").count().filter("count > 10").join(group_df, on=["sku", "workspace_id"], how="inner").drop('count')
+      
+    return out
+
+  
+  def transform_consolidated_sku_data(self, df):
     """
     Function to transform input data 
     """
     df = df.select(col('created_on').alias('ds'), 
-                   col('consolidated_sku').alias('sku'), 
+                   col('sku'), 
                    col('workspace_id').cast("string"), 
                    col('dbus')
-                  )
+                  ).withColumn("sku",
+                    when(col("sku").contains("ALL_PURPOSE"), "ALL_PURPOSE")
+                    .when(col("sku").contains("JOBS"), "JOBS")
+                    .when(col("sku").contains("DLT"), "DLT")
+                    .when(col("sku").contains("SQL"), "SQL")
+                    .when(col("sku").contains("INFERENCE"), "MODEL_INFERENCE")
+                    .otherwise("OTHER"))
     
     group_df = (
       df
@@ -159,3 +180,4 @@ class DBUProphetForecast():
     # assemble result set
     results = {'training_date':[training_date], 'workspace_id':[workspace_id], 'sku':[sku], 'mae':[mae], 'mse':[mse], 'rmse':[rmse]}
     return pd.DataFrame.from_dict( results )
+  

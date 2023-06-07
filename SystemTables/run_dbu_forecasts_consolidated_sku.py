@@ -7,16 +7,14 @@
 # MAGIC SKUs are aggregated to the top level categories: All Purpose, DLT, Jobs, Model Inference, and SQL. 
 # MAGIC
 # MAGIC This notebook generates and evaluates forecasts. Data is saved to the following tables: 
-# MAGIC 1. `input_dbus_by_date_system_sku_workspace`  
-# MAGIC 1. `output_dbu_forecasts_by_date_system_sku_workspace`  
-# MAGIC 1. `dbu_forecast_evals_by_date_system_sku_workspace`  
-# MAGIC 1. `vw_dbu_granular_forecasts`   
+# MAGIC 1. `input_dbus_by_date_sku_workspace`  
+# MAGIC 1. `output_dbu_forecasts_by_date_sku_workspace`  
+# MAGIC 1. `dbu_forecast_evals_by_date_sku_workspace`  
 
 # COMMAND ----------
 
 from pyspark.sql.functions import *
 from libs.dbu_prophet_forecast import DBUProphetForecast
-from libs.ddl_helper import DDLHelper
 
 # COMMAND ----------
 
@@ -56,18 +54,14 @@ df = dpf.load_data(spark=spark).filter(col('workspace_id') == '6051921418418893'
 
 # COMMAND ----------
 
-display(df)
-
-# COMMAND ----------
-
 # DBTITLE 1,Group and save dataframe as table 
-input_df = dpf.transform_data(df)
+input_df = dpf.transform_consolidated_sku_data(df)
 (
   input_df
   .write
   .option("mergeSchema", "true")
   .mode('overwrite')
-  .saveAsTable(f"{target_catalog}.{target_schema}.input_dbus_by_date_system_sku_workspace")
+  .saveAsTable(f"{target_catalog}.{target_schema}.input_dbus_by_date_sku_workspace")
 )
 
 # COMMAND ----------
@@ -87,7 +81,7 @@ results = (
   results.write
   .option("mergeSchema", "true")
   .mode('overwrite')
-  .saveAsTable(f"{target_catalog}.{target_schema}.output_dbu_forecasts_by_date_system_sku_workspace")
+  .saveAsTable(f"{target_catalog}.{target_schema}.output_dbu_forecasts_by_date_sku_workspace")
 )
 
 # COMMAND ----------
@@ -110,7 +104,7 @@ results = (
   results.write
   .option("mergeSchema", "true")
   .mode('overwrite')
-  .saveAsTable(f"{target_catalog}.{target_schema}.dbu_forecast_evals_by_date_system_sku_workspace")
+  .saveAsTable(f"{target_catalog}.{target_schema}.dbu_forecast_evals_by_date_sku_workspace")
 )
 
 # COMMAND ----------
@@ -120,55 +114,54 @@ results = (
 
 # COMMAND ----------
 
-## DDL Helper is used to create a cost lookup table
-# create obj
-ddl_help = DDLHelper(spark)
-# create table DDL
-ddl_help.create_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
-# insert overwrite into tale
-ddl_help.insert_into_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
-
-# COMMAND ----------
-
-# create view for reporting visuals
 spark.sql(f"""
-    create or replace view {target_catalog}.{target_schema}.vw_dbu_granular_forecasts
+    create or replace view {target_catalog}.{target_schema}.vw_dbu_forecasts
     as 
     select 
-    f.ds as date
-    , f.workspace_id
-    , f.sku
-    , f.y as dbus
-    , l.list_price
-    , f.y*l.list_price as ApproxListCost
-    , f.yhat*l.list_price as ApproxForecastListCost
-    , case when f.yhat < 0 then 0 else f.yhat end as dbus_predicted
-    , case when f.yhat_upper < 0 then 0 else f.yhat_upper end as dbus_predicted_upper
-    , case when f.yhat_lower < 0 then 0 else f.yhat_lower end as dbus_predicted_lower
-    , case when f.y > f.yhat_upper then TRUE else FALSE end as upper_anomaly_alert
-    , case when f.y < f.yhat_lower then TRUE else FALSE end as lower_anomaly_alert
-    , case when f.y >= f.yhat_lower AND f.y <= f.yhat_upper THEN true ELSE false END AS on_trend
-    , f.training_date
+    ds as date
+    , workspace_id
+    , sku
+    , y as dbus
+    , case when sku='ALL_PURPOSE' and y is not null then 0.55*y  
+      when sku='DLT' and y is not null  then 0.36*y
+      when sku='JOBS' and y is not null then 0.30*y
+      when sku='SQL' and y is not null then 0.22*y 
+      when sku='MODEL_INFERENCE' and y is not null then 0.079*y       
+      else NULL end as ApproxListCost
     
-    from {target_catalog}.{target_schema}.output_dbu_forecasts_by_date_system_sku_workspace f
-      inner join {target_catalog}.{target_schema}.sku_cost_lookup l on l.sku = f.sku
+    , case when sku='ALL_PURPOSE' and y is null then 0.55*yhat  
+      when sku='DLT' and y is null  then 0.36*yhat
+      when sku='JOBS' and y is null then 0.30*yhat
+      when sku='SQL' and y is null then 0.22*yhat 
+      when sku='MODEL_INFERENCE' and y is null then 0.079*yhat       
+      else NULL end as ApproxForecastListCost
+
+    , case when yhat < 0 then 0 else yhat end as dbus_predicted
+    , case when yhat_upper < 0 then 0 else yhat_upper end as dbus_predicted_upper
+    , case when yhat_lower < 0 then 0 else yhat_lower end as dbus_predicted_lower
+    , case when y > yhat_upper then TRUE else FALSE end as upper_anomaly_alert
+    , case when y < yhat_lower then TRUE else FALSE end as lower_anomaly_alert
+    , case when y >= yhat_lower AND y <= yhat_upper THEN true ELSE false END AS on_trend
+    , training_date
+    
+    from {target_catalog}.{target_schema}.output_dbu_forecasts_by_date_sku_workspace
 
 """)
 
 # COMMAND ----------
 
 # DBTITLE 1,All DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts') )
+display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts') )
 
 # COMMAND ----------
 
 # DBTITLE 1,All Purpose DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts').filter(col('sku').contains('ALL_PURPOSE')) )
+display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='ALL_PURPOSE') )
 
 # COMMAND ----------
 
 # DBTITLE 1,Jobs DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts').filter(col('sku').contains('JOBS')) )
+display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='JOBS') )
 
 # COMMAND ----------
 
@@ -184,7 +177,3 @@ display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').f
 
 # DBTITLE 1,Model Inference DBUs
 display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='MODEL_INFERENCE') )
-
-# COMMAND ----------
-
-
