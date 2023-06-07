@@ -70,6 +70,8 @@ class DDLHelper():
           , l.list_price
           , f.y*l.list_price as ApproxListCost
           , f.yhat*l.list_price as ApproxForecastListCost
+          , case when f.yhat_lower*l.list_price < 0 then 0 else f.yhat_lower*l.list_price end as ApproxForecastListCostLower
+          , f.yhat_upper*l.list_price as ApproxForecastListCostUpper
           , case when f.yhat < 0 then 0 else f.yhat end as dbus_predicted
           , case when f.yhat_upper < 0 then 0 else f.yhat_upper end as dbus_predicted_upper
           , case when f.yhat_lower < 0 then 0 else f.yhat_lower end as dbus_predicted_lower

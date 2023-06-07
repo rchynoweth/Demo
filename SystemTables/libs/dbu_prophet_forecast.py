@@ -49,6 +49,16 @@ class DBUProphetForecast():
       StructField('rmse', FloatType())
       ])
     
+    self.analysis_eval_schema = StructType([
+      StructField('training_date', DateType()),
+      StructField('workspace_id', StringType()),
+      StructField('sku', StringType()),
+      StructField('max_forecast_date', DateType()),
+      StructField('mae', FloatType()),
+      StructField('mse', FloatType()),
+      StructField('rmse', FloatType())
+      ])
+    
     self.generate_forecast_udf = udf(self.generate_forecast)
 
   def load_data(self, spark):
@@ -181,3 +191,25 @@ class DBUProphetForecast():
     results = {'training_date':[training_date], 'workspace_id':[workspace_id], 'sku':[sku], 'mae':[mae], 'mse':[mse], 'rmse':[rmse]}
     return pd.DataFrame.from_dict( results )
   
+
+  def evaluate_forecast_w_max_date(self, evaluation_pd):
+    """
+    Forecast evaluation function. Generates MAE, RMSE, MSE metrics. 
+
+    NOTE: Pandas UDFs inside classes must be static 
+    """
+    evaluation_pd = evaluation_pd[evaluation_pd['y'].notnull()]
+    # get sku in incoming data set
+    training_date = evaluation_pd['training_date'].iloc[0]
+    sku = evaluation_pd['sku'].iloc[0]
+    workspace_id = evaluation_pd['workspace_id'].iloc[0]
+    max_forecast_date = evaluation_pd['max_forecast_date'].iloc[0]
+    
+    # calulate evaluation metrics
+    mae = mean_absolute_error( evaluation_pd['y'], evaluation_pd['yhat'] )
+    mse = mean_squared_error( evaluation_pd['y'], evaluation_pd['yhat'] )
+    rmse = sqrt( mse )
+    
+    # assemble result set
+    results = {'training_date':[training_date], 'workspace_id':[workspace_id], 'sku':[sku],'max_forecast_date':[max_forecast_date], 'mae':[mae], 'mse':[mse], 'rmse':[rmse]}
+    return pd.DataFrame.from_dict( results )

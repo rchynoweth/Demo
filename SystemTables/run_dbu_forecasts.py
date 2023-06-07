@@ -25,8 +25,8 @@ dpf = DBUProphetForecast(forecast_periods=28)
 # COMMAND ----------
 
 # DBTITLE 1,Parameters
-dbutils.widgets.text('TargetCatalog', '')
-dbutils.widgets.text('TargetSchema', '')
+dbutils.widgets.text('TargetCatalog', 'ryan_chynoweth_catalog')
+dbutils.widgets.text('TargetSchema', 'prophet_forecast_schema')
 target_catalog = dbutils.widgets.get('TargetCatalog')
 target_schema = dbutils.widgets.get('TargetSchema')
 
