@@ -4,26 +4,27 @@
 # MAGIC
 # MAGIC This notebook sources data from Databricks System Tables (`system.operational_data.billing_logs`). Generates Prophet forecasts by SKU and Workspace. 
 # MAGIC
-# MAGIC SKUs are aggregated to the top level categories: All Purpose, DLT, Jobs, Model Inference, and SQL. 
+# MAGIC Please note that SKUs are not aggregated and we produce forecasts for all SKU types i.e. `STANDARD_ALL_PURPOSE_COMPUTE`, `PREMIUM_ALL_PURPOSE_COMPUTE`
 # MAGIC
 # MAGIC This notebook generates and evaluates forecasts. Data is saved to the following tables: 
 # MAGIC 1. `input_dbus_by_date_system_sku_workspace`  
 # MAGIC 1. `output_dbu_forecasts_by_date_system_sku_workspace`  
 # MAGIC 1. `dbu_forecast_evals_by_date_system_sku_workspace`  
-# MAGIC 1. `vw_dbu_granular_forecasts`   
 
 # COMMAND ----------
 
+# DBTITLE 1,Import libs
 from pyspark.sql.functions import *
 from libs.dbu_prophet_forecast import DBUProphetForecast
-from libs.ddl_helper import DDLHelper
 
 # COMMAND ----------
 
+# DBTITLE 1,Create forecast obj
 dpf = DBUProphetForecast(forecast_periods=28)
 
 # COMMAND ----------
 
+# DBTITLE 1,Parameters
 dbutils.widgets.text('TargetCatalog', '')
 dbutils.widgets.text('TargetSchema', '')
 target_catalog = dbutils.widgets.get('TargetCatalog')
@@ -31,6 +32,7 @@ target_schema = dbutils.widgets.get('TargetSchema')
 
 # COMMAND ----------
 
+# DBTITLE 1,Create data objects
 spark.sql(f"create catalog if not exists {target_catalog}")
 spark.sql(f"create schema if not exists {target_catalog}.{target_schema}")
 spark.sql(f'use catalog {target_catalog}')
@@ -53,10 +55,6 @@ def evaluate_forecast_udf(evaluation_pd):
 
 # DBTITLE 1,Read data from System table
 df = dpf.load_data(spark=spark).filter(col('workspace_id') == '6051921418418893')
-
-# COMMAND ----------
-
-display(df)
 
 # COMMAND ----------
 
@@ -93,7 +91,6 @@ results = (
 # COMMAND ----------
 
 # DBTITLE 1,Evaluate Forecasts
-# calculate metrics
 results = (
   spark.read
     .table(f'{target_catalog}.{target_schema}.output_dbu_forecasts_by_date_sku_workspace')
@@ -112,79 +109,3 @@ results = (
   .mode('overwrite')
   .saveAsTable(f"{target_catalog}.{target_schema}.dbu_forecast_evals_by_date_system_sku_workspace")
 )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC The queries below can be used to visualize forecast outputs
-
-# COMMAND ----------
-
-## DDL Helper is used to create a cost lookup table
-# create obj
-ddl_help = DDLHelper(spark)
-# create table DDL
-ddl_help.create_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
-# insert overwrite into tale
-ddl_help.insert_into_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
-
-# COMMAND ----------
-
-# create view for reporting visuals
-spark.sql(f"""
-    create or replace view {target_catalog}.{target_schema}.vw_dbu_granular_forecasts
-    as 
-    select 
-    f.ds as date
-    , f.workspace_id
-    , f.sku
-    , f.y as dbus
-    , l.list_price
-    , f.y*l.list_price as ApproxListCost
-    , f.yhat*l.list_price as ApproxForecastListCost
-    , case when f.yhat < 0 then 0 else f.yhat end as dbus_predicted
-    , case when f.yhat_upper < 0 then 0 else f.yhat_upper end as dbus_predicted_upper
-    , case when f.yhat_lower < 0 then 0 else f.yhat_lower end as dbus_predicted_lower
-    , case when f.y > f.yhat_upper then TRUE else FALSE end as upper_anomaly_alert
-    , case when f.y < f.yhat_lower then TRUE else FALSE end as lower_anomaly_alert
-    , case when f.y >= f.yhat_lower AND f.y <= f.yhat_upper THEN true ELSE false END AS on_trend
-    , f.training_date
-    
-    from {target_catalog}.{target_schema}.output_dbu_forecasts_by_date_system_sku_workspace f
-      inner join {target_catalog}.{target_schema}.sku_cost_lookup l on l.sku = f.sku
-
-""")
-
-# COMMAND ----------
-
-# DBTITLE 1,All DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts') )
-
-# COMMAND ----------
-
-# DBTITLE 1,All Purpose DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts').filter(col('sku').contains('ALL_PURPOSE')) )
-
-# COMMAND ----------
-
-# DBTITLE 1,Jobs DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts').filter(col('sku').contains('JOBS')) )
-
-# COMMAND ----------
-
-# DBTITLE 1,DLT DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='DLT') )
-
-# COMMAND ----------
-
-# DBTITLE 1,SQL DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='SQL') )
-
-# COMMAND ----------
-
-# DBTITLE 1,Model Inference DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='MODEL_INFERENCE') )
-
-# COMMAND ----------
-
-
