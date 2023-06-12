@@ -1,9 +1,9 @@
 # Databricks notebook source
 # MAGIC %md 
 # MAGIC #Querying the event log
-# MAGIC 
+# MAGIC
 # MAGIC A Delta Live Tables event log is created and maintained for every pipeline and serves as the single source of truth for all information related to the pipeline, including audit logs, data quality checks, pipeline progress, and data lineage. The event log is exposed via the `/events` API and is displayed in the Delta Live Tables UI. The event log is also stored as a delta table and can be easily accessed in a Databricks Notebook to perform more complex analyis. This notebook demonstrates simple examples of how to query and extract useful data from the event log.
-# MAGIC 
+# MAGIC
 # MAGIC This notebook requires Databricks Runtime 8.1 or above to access the JSON SQL operators that are used in some queries.
 
 # COMMAND ----------
@@ -17,7 +17,7 @@ dbutils.widgets.text('storage', 'dbfs:/pipelines/production-data', 'Storage Loca
 # DBTITLE 1,Event log view
 # MAGIC %md
 # MAGIC The examples in this notebook use a view named `event_log_raw` to simplify queries against the event log. To create the `event_log_raw` view:
-# MAGIC 
+# MAGIC
 # MAGIC 1. Enter the path to the event log in the **Storage Location** text box. To find the path, click **Settings** on the **Pipeline details** page for your pipeline to display the **Edit pipeline settings** dialog. The path is the value in the **Storage location** field. The path is also available in the JSON settings. Click the **JSON** button on the **Edit pipeline settings** dialog and look for the `storage` field.
 # MAGIC 2. Run the following commands to create the `event_log_raw` view.
 
@@ -37,7 +37,7 @@ event_log.createOrReplaceTempView("event_log_raw")
 # DBTITLE 1,Event log schema
 # MAGIC %md
 # MAGIC The following is the top level schema for the event log:
-# MAGIC 
+# MAGIC
 # MAGIC | Field       | Description |
 # MAGIC | ----------- | ----------- |
 # MAGIC | id          | The ID of the pipeline. |
@@ -98,6 +98,7 @@ spark.conf.set('latest_update.id', latest_update_id)
 # DBTITLE 1,Data quality
 # MAGIC %md
 # MAGIC The event log maintains metrics related to data quality. Information related to the data quality checks defined with Delta Live Tables expectations is stored in the `flow_progress` events. The following query extracts the number of passing and failing records for each data quality rule defined for each dataset:
+# MAGIC
 
 # COMMAND ----------
 
