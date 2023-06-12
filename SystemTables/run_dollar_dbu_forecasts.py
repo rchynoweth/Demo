@@ -25,6 +25,14 @@ dpf = DBUProphetForecast(forecast_periods=28)
 
 # COMMAND ----------
 
+# DBTITLE 1,Parameters
+dbutils.widgets.text('TargetCatalog', 'ryan_chynoweth_catalog')
+dbutils.widgets.text('TargetSchema', 'prophet_forecast_schema')
+target_catalog = dbutils.widgets.get('TargetCatalog')
+target_schema = dbutils.widgets.get('TargetSchema')
+
+# COMMAND ----------
+
 # DBTITLE 1,Make sure we have a cost table
 ## DDL Helper is used to create a cost lookup table
 # create obj
@@ -33,14 +41,6 @@ ddl_help = DDLHelper(spark=spark)
 ddl_help.create_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
 # insert overwrite into tale
 ddl_help.insert_into_cost_lookup_table(target_catalog=target_catalog, target_schema=target_schema)
-
-# COMMAND ----------
-
-# DBTITLE 1,Parameters
-dbutils.widgets.text('TargetCatalog', 'ryan_chynoweth_catalog')
-dbutils.widgets.text('TargetSchema', 'prophet_forecast_schema')
-target_catalog = dbutils.widgets.get('TargetCatalog')
-target_schema = dbutils.widgets.get('TargetSchema')
 
 # COMMAND ----------
 
@@ -72,6 +72,7 @@ display(df)
 
 # COMMAND ----------
 
+# DBTITLE 1,Check calculations and join
 display(
   df.select(col("created_on").alias('ds'), col('sku'), col('dbus'), col('workspace_id'))
   .join(spark.read.table('sku_cost_lookup'), on='sku', how='left')
@@ -85,6 +86,7 @@ display(group_df)
 
 # COMMAND ----------
 
+# DBTITLE 1,Format the data
 group_df = (
   df.select(col("created_on").alias('ds'), col('sku'), col('dbus'), col('workspace_id'))
   .join(spark.read.table('sku_cost_lookup'), on='sku', how='left')
