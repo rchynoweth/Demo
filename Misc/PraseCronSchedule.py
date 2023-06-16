@@ -37,8 +37,7 @@ character_lookup = {
 def parse_cron_schedule(cron_expression):
 
   # get the cron and split the values into a list
-  schedule = cron_dict.get('quartz_cron_expression')
-  schedule_list = schedule.split(' ')
+  schedule_list = cron_expression.split(' ')
   output_dict = {}
 
   output_dict['cron_second'] = schedule_list[0] # required field

@@ -1,19 +1,12 @@
 # Databricks notebook source
-spark.conf.set("fs.azure.account.key.racadlsgen2.dfs.core.windows.net", dbutils.secrets.get("rac_scope", "adls_key"))
-
-dbutils.fs.ls("abfss://commondatabase@racadlsgen2.dfs.core.windows.net/")
-
-
+# MAGIC %sql
+# MAGIC use catalog users
 
 # COMMAND ----------
 
 # MAGIC %sql
-# MAGIC create database if not exists rac_demo_db
-
-# COMMAND ----------
-
-# MAGIC %sql
-# MAGIC use rac_demo_db
+# MAGIC create schema if not exists ryan_chynoweth;
+# MAGIC use schema ryan_chynoweth; 
 
 # COMMAND ----------
 
@@ -32,11 +25,16 @@ df.createOrReplaceTempView("bike_data")
 
 # COMMAND ----------
 
+# MAGIC %md
+# MAGIC Create an external UC Table using Cluster Credentials and not an external location
+
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC -- create hive table with the temp view and provide a location using abfss
-# MAGIC create table if not exists bike_sharing_daily_data 
+# MAGIC create or replace table bike_sharing_daily_data 
 # MAGIC using delta 
-# MAGIC location 'abfss://commondatabase@racadlsgen2.dfs.core.windows.net/bike_sharing_daily_data'
+# MAGIC location 'abfss://commondatabase@racadlsgen2.dfs.core.windows.net/bike_sharing_daily_data_uc'
 # MAGIC as 
 # MAGIC select * from bike_data
 
@@ -47,7 +45,7 @@ df.createOrReplaceTempView("bike_data")
 
 # COMMAND ----------
 
-dbutils.fs.ls("abfss://commondatabase@racadlsgen2.dfs.core.windows.net/") # data is stored in location
+dbutils.fs.ls("abfss://commondatabase@racadlsgen2.dfs.core.windows.net/bike_sharing_daily_data_uc") # data is stored in location
 
 # COMMAND ----------
 
