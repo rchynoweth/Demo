@@ -4,29 +4,30 @@
 -- MAGIC
 -- MAGIC System Tables are a Databricks-hosted analytical store for operational and usage data. 
 -- MAGIC
--- MAGIC System Tables can be used for monitoring, analyzing performance, usage, and behavior of these components within the Databricks platform. By querying these tables, users can gain insights into how their jobs, notebooks, clusters, ML endpoints, and SQL warehouses are functioning and changing over time. This historical data can be used to optimize performance, troubleshoot issues, track usage patterns, and make data-driven decisions.
+-- MAGIC System Tables can be used for monitoring, analyzing performance, usage, and behavior of Databricks Platform components. By querying these tables, users can gain insights into how their jobs, notebooks, users, clusters, ML endpoints, and SQL warehouses are functioning and changing over time. This historical data can be used to optimize performance, troubleshoot issues, track usage patterns, and make data-driven decisions.
 -- MAGIC
 -- MAGIC Overall, System Tables provide a means to enhance observability and gain valuable insights into the operational aspects of Databricks usage, enabling users to better understand and manage their workflows and resources.
 -- MAGIC - Cost and usage analytics 
 -- MAGIC - Efficiency analytics 
 -- MAGIC - Audit analytics 
--- MAGIC - SLO analytics 
+-- MAGIC - Service Level Objective analytics 
 -- MAGIC - Data Quality analytics 
 -- MAGIC
 -- MAGIC ## Datasets 
 -- MAGIC
--- MAGIC System Tables are available to customers who have Unity Catalog activated in at least one workspace. The data provided is collected from all workspaces in a Databricks account, regardless of the workspace's status with Unity Catalog. For example, if I have 10 workspaces and only one of them have Unity Catalog enabled then data is collected for all the workspaces and is made available via the workspace in which Unity Catalog is active. 
+-- MAGIC System Tables are available to customers who have Unity Catalog activated in at least one workspace. The data provided is collected from all workspaces in a Databricks account, regardless of the workspace's status with Unity Catalog. For example, if I have 10 workspaces and only one of them have Unity Catalog enabled then data is collected for all the workspaces and is made available via the single workspace in which Unity Catalog is active. 
 -- MAGIC
--- MAGIC Today we will provide an overview of the `system.billing.usage` and `system.access.audit` tables with sample visuals. 
+-- MAGIC We will provide an overview of the `system.billing.usage` and `system.access.audit` tables with sample visuals, however, there are other tables available such as: `system.access.column_lineage` and `system.access.table_lineage`
 -- MAGIC
--- MAGIC The `audit` table collects various information regarding Databricks objects, users, and actions. While the `usage` table tracks Databricks costs and usage (DBUs) for all compute types available in Databricks. So for example, if your question is related to "monthly active users over time" then the `audit_logs` will be the best data source for that, while if you want to track costs by tag or workspace then leverage the `usage` table. The `usage` table tracks usage on a workspace, compute_id, compute, size, job, and SKU level. Additional tags are made available via a `tags` column which includes custom tags that are created by the customer. 
+-- MAGIC The `audit` table collects various information regarding Databricks objects, users, and actions. While the `usage` table tracks Databricks costs and usage (DBUs) for all compute types available in Databricks. So for example, if your question is related to "monthly active users over time" then the `audit_logs` will be the best data source for that, while if you want to track costs by tag or workspace then leverage the `usage` table. The `usage` table tracks usage on a workspace, compute_id, compute, size, job, and SKU level. Additional tags are made available via a `custom_tags` column which includes tags that are created by the customer. 
+-- MAGIC
+-- MAGIC ## Dashboard
+-- MAGIC
+-- MAGIC There is a sample [dashboard](https://e2-dogfood.staging.cloud.databricks.com/sql/dashboards/cae6779e-ca25-4ae2-8c68-c140877111fd?o=6051921418418893) available that leverages the queries covered in this notebook. 
 
 -- COMMAND ----------
 
 -- MAGIC %md
--- MAGIC
--- MAGIC INTERNAL NOTE - BILLING LOGS SCHEMA IS CHANGING WEEK OF 6/19. SCHEMA BELOW IS THE NEW SCHEMA BUT QUERIES ARE ON THE OLD ONES
--- MAGIC
 -- MAGIC ## Billing Logs
 -- MAGIC
 -- MAGIC In public prevew the `billing_logs` table schema and associated catalog schema is changing. The new table will be available at `system.billing.usage` and has the following columns: 
@@ -48,93 +49,148 @@
 
 -- COMMAND ----------
 
--- using these defaults for view creation
-use catalog main;
-create schema if not exists ryan_chynoweth;
-use schema ryan_chynoweth;
+select * from system.billing.usage
 
 -- COMMAND ----------
 
-select * from system.operational_data.billing_logs
+-- MAGIC %md
+-- MAGIC ### Jobs Usage 
+-- MAGIC
+-- MAGIC Jobs are scheduled code and have extremely predictable usage over time. Since jobs are automated it is important to monitor which jobs are put into production to avoid unnecessary spend. Let's take a look at job spend over time. 
 
 -- COMMAND ----------
 
 select account_id
- , workspace_id
- , created_at
- , created_on
- , date_format(created_at, "yyyy-MM") as YearMonth
- , tags.Creator
- , compute_id
- , tags.ClusterName
- , compute_size
- , sku
- , dbus
- , machine_hours 
- , tags.SqlEndpointId
- , tags.ResourceClass
- , tags.JobId
- , tags.RunName
- , tags.ModelName
- , tags.ModelVersion
- , tags.ModelStage
+, workspace_id
+, usage_record_id
+, sku_name
+, cloud 
+, usage_start_time 
+, usage_end_time
+, usage_date
+, date_format(usage_date, 'yyyy-MM') as YearMonth
+, usage_unit
+, usage_quantity
+, list_price
+, list_price*usage_quantity as list_cost
+, custom_tags.Team -- parse out custom tags if available 
+, system_metadata.cluster_id
+, system_metadata.job_id
+, system_metadata.sql_endpoint_id 
+, system_metadata.instance_pool_id
+, system_metadata.node_type
 
-from system.operational_data.billing_logs
-where created_on >= '2022-01-01' 
-      and tags.JobId is not Null 
+from system.billing.usage
+left join main.default.sku_cost_lookup on sku_name = sku
 
--- COMMAND ----------
-
--- DBTITLE 1,Interactive Jobs
-select account_id
- , workspace_id
- , created_at
- , created_on
- , date_format(created_at, "yyyy-MM") as YearMonth
- , tags.Creator
- , compute_id
- , tags.ClusterName
- , compute_size
- , sku
- , dbus
- , machine_hours 
- , tags.SqlEndpointId
- , tags.ResourceClass
- , tags.JobId
- , tags.RunName
- , tags.ModelName
- , tags.ModelVersion
- , tags.ModelStage
-
-from system.operational_data.billing_logs
-where created_on >= '2022-01-01' 
-      and tags.JobId is not Null and contains(sku, 'JOBS') == FALSE -- want to find interactive jobs 
+where system_metadata.job_id is not Null 
 
 -- COMMAND ----------
 
--- let's look at the number of models we have running by stage
-select account_id
- , workspace_id
- , created_at
- , created_on
- , date_format(created_at, "yyyy-MM") as YearMonth
- , tags.Creator
- , compute_id
- , tags.ClusterName
- , compute_size
- , sku
- , dbus
- , machine_hours 
- , tags.SqlEndpointId
- , tags.ResourceClass
- , tags.JobId
- , tags.RunName
- , tags.ModelName
- , tags.ModelVersion
- , case when tags.ModelStage is null then 'Other' else tags.ModelStage end as ModelStage
+-- MAGIC %md 
+-- MAGIC ### Interactive Jobs 
+-- MAGIC
+-- MAGIC Interactive (All Purpose) compute are clusters meant to be used during the development process. Once a solution is developed it is considered a best practice to move them to job clusters. We will want to keep an eye on how many jobs are created on all purpose and alert the users when that happens to make the change. 
 
-from system.operational_data.billing_logs
-where created_on >= '2022-01-01' and contains(sku, 'INFERENCE')
+-- COMMAND ----------
+
+-- DBTITLE 0,Interactive Jobs
+with created_jobs as (
+  select 
+    workspace_id
+    , event_time as created_time
+    , user_identity.email as creator
+    , request_id
+    , event_id
+    , get_json_object(response.result, '$.job_id') as job_id
+    , request_params.name as job_name
+    , request_params.job_type 
+    , request_params.schedule
+
+    from system.access.audit 
+
+    where action_name = 'create' 
+    and service_name = 'jobs'
+    and response.status_code = 200
+
+
+
+
+), 
+deleted_jobs as (
+
+  select request_params.job_id, workspace_id
+  from system.access.audit 
+
+  where action_name = 'delete' 
+  and service_name = 'jobs'
+  and response.status_code = 200
+
+
+)
+
+select a.workspace_id
+, a.sku_name
+, a.cloud 
+, a.usage_date
+, date_format(usage_date, 'yyyy-MM') as YearMonth
+, a.usage_unit
+, d.list_price
+, sum(a.usage_quantity) total_dbus
+, sum(a.usage_quantity)*d.list_price as list_cost
+, a.system_metadata.cluster_id
+, a.system_metadata.job_id
+, a.system_metadata.sql_endpoint_id 
+, a.system_metadata.instance_pool_id
+, a.system_metadata.node_type
+, case when b.job_id is not null then TRUE else FALSE end as job_created_flag
+, case when c.job_id is not null then TRUE else FALSE end as job_deleted_flag
+
+from system.billing.usage a
+  left join created_jobs b on a.workspace_id = b.workspace_id and a.system_metadata.job_id = b.job_id
+  left join deleted_jobs c on a.workspace_id = c.workspace_id and a.system_metadata.job_id = c.job_id
+  left join main.default.sku_cost_lookup d on sku_name = sku
+
+
+where system_metadata.job_id is not Null 
+and contains(sku_name, 'ALL_PURPOSE')
+
+group by all
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ### Model Inference Usage 
+-- MAGIC
+-- MAGIC Databricks has the ability to host and deploy serverless model endpoints for highly available and cost effective REST APIs. Endpoints can scale all the way down to zero and quickly come up to provide a response to the end user optimizing experience and spend. Let's keep and eye on how many models we have deployed the the usage of those models. 
+
+-- COMMAND ----------
+
+select account_id
+, workspace_id
+, usage_record_id
+, sku_name
+, cloud 
+, usage_start_time 
+, usage_end_time
+, usage_date
+, date_format(usage_date, 'yyyy-MM') as YearMonth
+, usage_unit
+, usage_quantity
+, list_price
+, list_price*usage_quantity as list_cost
+, custom_tags.Team -- parse out custom tags if available 
+, system_metadata
+, system_metadata.cluster_id
+, system_metadata.job_id
+, system_metadata.sql_endpoint_id 
+, system_metadata.instance_pool_id
+, system_metadata.node_type
+
+from system.billing.usage
+left join main.default.sku_cost_lookup on sku_name = sku
+
+where contains(sku_name, 'INFERENCE')
 
 -- COMMAND ----------
 
@@ -143,8 +199,9 @@ where created_on >= '2022-01-01' and contains(sku, 'INFERENCE')
 -- MAGIC
 -- MAGIC The `audit_logs` table has the following columns: 
 -- MAGIC - version
--- MAGIC - created_at
--- MAGIC - created_on
+-- MAGIC - event_time
+-- MAGIC - event_date
+-- MAGIC - event_id
 -- MAGIC - workspace_id
 -- MAGIC - source_ip_address
 -- MAGIC - user_agent
@@ -162,27 +219,21 @@ where created_on >= '2022-01-01' and contains(sku, 'INFERENCE')
 
 -- COMMAND ----------
 
-select distinct action_name from system.operational_data.audit_logs
+select * from system.access.audit
 
 -- COMMAND ----------
 
--- create 
--- createShare
--- createExternalLocation
--- deleteSchema
--- editWarehouse, startEndpoint, createEndpoint, 
--- runFailed, runSucceeded
--- deleteWarehouse
--- commandFinish
--- favoriteDashboard
+-- MAGIC %md
+-- MAGIC ### Completed Jobs
+-- MAGIC
+-- MAGIC It is important that job success rate is high. We will want to keep an eye on how each job run is doing and if we see an uptick in failures/errors then we can receive automated alerts of unusual behaviour across jobs instead of single job notifications. 
 
 -- COMMAND ----------
 
-create or replace view system_job_runs 
-as
-select created_at
-, created_on
-, date_format(created_on, 'yyyy-MM') AS year_month
+-- job runs by state over time
+select event_time
+, event_date
+, date_format(event_date, 'yyyy-MM') AS year_month
 , workspace_id
 , service_name
 , action_name
@@ -198,18 +249,22 @@ select created_at
 , request_params.jobTerminalState
 , request_params.taskKey
 , request_params.jobTriggerType
-from system.operational_data.audit_logs 
-where action_name in ('runFailed', 'runSucceeded', 'runNow', 'runStart', 'runTriggered');
-
-select * from system_job_runs where action_name in ('runFailed', 'runSucceeded', 'runTriggered') and jobTerminalState is not null
+from system.access.audit  
+where action_name in ('runFailed', 'runSucceeded');
 
 -- COMMAND ----------
 
-create or replace view system_external_locations 
-as
-select created_at
-, created_on
-, date_format(created_on, 'yyyy-MM') AS year_month
+-- MAGIC %md
+-- MAGIC ### External Locations 
+-- MAGIC External locations are a common way to load data from cloud object storage into Databricks tables. They can also be used for writing data out of Databricks for external processes. We want to ensure that data is being used properly and is not exfiltrating outside our doman. Let's see how many external locations are being created over time and which ones are the most used. 
+
+-- COMMAND ----------
+
+-- created external locations 
+-- monitor possible data exfilltration 
+select event_time
+, event_date
+, date_format(event_date, 'yyyy-MM') AS year_month
 , user_identity.email as user_email
 , service_name
 , action_name
@@ -218,42 +273,58 @@ select created_at
 , request_params.skip_validation
 , request_params.credential_name
 , request_params.url
-, request_params.max_results
 , request_params.workspace_id
 , request_params.metastore_id
-, response.statusCode
-, request_params.include_browse
-, request_params.name_arg
+, response.status_code
 
-from system.operational_data.audit_logs
 
-where contains(action_name, 'ExternalLocation') ; 
+from system.access.audit 
 
--- who is creating external locations
-select * 
-from system_external_locations 
+
 where action_name = 'createExternalLocation' 
-order by created_on desc
+
 
 -- COMMAND ----------
 
 -- most used external locations
-select * 
-from system_external_locations 
-where action_name = 'getExternalLocation'
-order by created_on desc
+
+select event_time
+, event_date
+, date_format(event_date, 'yyyy-MM') AS year_month
+, user_identity.email as user_email
+, service_name
+, action_name
+, request_id
+, request_params
+, request_params.name_arg as external_location_name
+, request_params.workspace_id
+, request_params.metastore_id
+, response.status_code
+
+
+from system.access.audit 
+
+
+where action_name = 'getExternalLocation' 
+
+
+-- COMMAND ----------
+
+-- MAGIC %md
+-- MAGIC ### Users 
+-- MAGIC
+-- MAGIC An important KPI for any platform team administering Databricks is the number of users that they are supporting. This allows admins to quantify the impact is developer productivity and importance to the organization.  
 
 -- COMMAND ----------
 
 -- Daily and Monthly Active Users 
 select distinct
-created_on as `Date`
-, date_format(created_on, 'yyyy-MM') AS year_month
+event_date as `Date`
+, date_format(event_date, 'yyyy-MM') AS year_month
 , workspace_id
 , user_identity.email as user_email
 
-from system.operational_data.audit_logs
-
+from system.access.audit 
 
 -- COMMAND ----------
 

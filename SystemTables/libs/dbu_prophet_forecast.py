@@ -74,16 +74,19 @@ class DBUProphetForecast():
 
   def load_data(self, spark):
     """
-    Load data from system.operational_data.billing_logs
+    Load data from system.billing.usage
     """
     return (
-      spark.table("system.operational_data.billing_logs")
-      .withColumn("YearMonth", expr('date_format(created_at, "yyyy-MM")'))
-      .filter(col("created_on") >= "2021-01-01")
-      .select("account_id", "workspace_id", "created_at", "created_on"
-        , "YearMonth", "tags.Creator", "compute_id", "tags.ClusterName", "compute_size"
-        , "sku", "dbus", "machine_hours" , "tags.SqlEndpointId", "tags.ResourceClass"
-        , "tags.JobId", "tags.RunName", "tags.ModelName", "tags.ModelVersion", "tags.ModelStage")
+      spark.sql("""
+                select workspace_id
+                , usage_date as created_on
+                , sku_name as sku
+                , usage_quantity as dbus
+
+                from system.billing.usage
+
+                where usage_unit = 'DBU'
+                """)
       )
 
 
@@ -94,7 +97,7 @@ class DBUProphetForecast():
     df = df.select(col('created_on').alias('ds'), 
                    col('sku'), 
                    col('workspace_id').cast("string"), 
-                   col('dbus')
+                   col('dbus').cast('double')
                   )
       
     group_df = (

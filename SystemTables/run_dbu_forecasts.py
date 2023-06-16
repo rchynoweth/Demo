@@ -33,8 +33,8 @@ target_schema = dbutils.widgets.get('TargetSchema')
 # COMMAND ----------
 
 # DBTITLE 1,Create data objects
-spark.sql(f"create catalog if not exists {target_catalog}")
-spark.sql(f"create schema if not exists {target_catalog}.{target_schema}")
+# spark.sql(f"create catalog if not exists {target_catalog}")
+# spark.sql(f"create schema if not exists {target_catalog}.{target_schema}")
 spark.sql(f'use catalog {target_catalog}')
 spark.sql(f'use schema {target_schema}')
 
@@ -55,6 +55,10 @@ def evaluate_forecast_udf(evaluation_pd):
 
 # DBTITLE 1,Read data from System table
 df = dpf.load_data(spark=spark).filter(col('workspace_id') == '6051921418418893')
+
+# COMMAND ----------
+
+# spark.sql(f"drop table {target_catalog}.{target_schema}.input_dbus_by_date_system_sku_workspace")
 
 # COMMAND ----------
 
@@ -93,7 +97,7 @@ results = (
 # DBTITLE 1,Evaluate Forecasts
 results = (
   spark.read
-    .table(f'{target_catalog}.{target_schema}.output_dbu_forecasts_by_date_sku_workspace')
+    .table(f'{target_catalog}.{target_schema}.output_dbu_forecasts_by_date_system_sku_workspace')
     .select('training_date', 'workspace_id', 'sku', 'y', 'yhat')
     .groupBy('training_date', 'workspace_id', 'sku')
     .applyInPandas(evaluate_forecast_udf, schema=dpf.eval_schema)
