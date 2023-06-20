@@ -21,7 +21,7 @@ class DDLHelper():
     Forecast Reporting view for consolidated sku i.e. ALL_PURPOSE, SQL, DLT
     """
     self.spark.sql(f"""
-        create or replace view {target_catalog}.{target_schema}.vw_dbu_forecasts
+        create view if not exists {target_catalog}.{target_schema}.vw_dbu_forecasts
         as 
         select 
         ds as date
@@ -53,14 +53,66 @@ class DDLHelper():
         from {target_catalog}.{target_schema}.output_dbu_forecasts_by_date_sku_workspace
 
     """)
-  
 
-  def create_granular_forecast_view(self, target_catalog, target_schema):
+
+   def create_granular_forecast_view(self, target_catalog, target_schema):
     """
     Forecast Reporting view for granular sku i.e. STANDARD_ALL_PURPOSE_COMPUTE, PREMIUM_ALL_PURPOSE_COMPUTE
     """
     self.spark.sql(f"""
-          create or replace view {target_catalog}.{target_schema}.vw_dbu_granular_forecasts
+          create view if not exists {target_catalog}.{target_schema}.vw_dbu_granular_forecasts
+          as 
+          with forecasts as (
+            select 
+            f.ds as date
+            , f.workspace_id
+            , f.sku
+            , f.y as dbus
+            , l.list_price
+            , f.y*l.list_price as ApproxListCost
+            , f.yhat*l.list_price as ApproxForecastListCost
+            , case when f.yhat_lower*l.list_price < 0 then 0 else f.yhat_lower*l.list_price end as ApproxForecastListCostLower
+            , f.yhat_upper*l.list_price as ApproxForecastListCostUpper
+            , case when f.yhat < 0 then 0 else f.yhat end as dbus_predicted
+            , case when f.yhat_upper < 0 then 0 else f.yhat_upper end as dbus_predicted_upper
+            , case when f.yhat_lower < 0 then 0 else f.yhat_lower end as dbus_predicted_lower
+            , case when f.y > f.yhat_upper then TRUE else FALSE end as upper_anomaly_alert
+            , case when f.y < f.yhat_lower then TRUE else FALSE end as lower_anomaly_alert
+            , case when f.y >= f.yhat_lower AND f.y <= f.yhat_upper THEN true ELSE false END AS on_trend
+            , f.training_date
+
+          from {target_catalog}.{target_schema}.output_dbu_forecasts_by_date_system_sku_workspace f
+            inner join {target_catalog}.{target_schema}.sku_cost_lookup l on l.sku = f.sku
+            )
+
+            select 
+            `date`
+            , workspace_id
+            , sku
+            , dbus
+            , list_price
+            , ApproxListCost
+            , avg(ApproxForecastListCost) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS ApproxForecastListCost
+            , avg(ApproxForecastListCostUpper) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS ApproxForecastListCostUpper
+            , avg(ApproxForecastListCostLower) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS ApproxForecastListCostLower
+            , avg(dbus_predicted) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS dbus_predicted
+            , avg(dbus_predicted_upper) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS dbus_predicted_upper
+            , avg(dbus_predicted_lower) OVER (PARTITION BY sku ORDER BY date ROWS BETWEEN 7 PRECEDING AND 7 FOLLOWING) AS dbus_predicted_lower
+            , upper_anomaly_alert
+            , lower_anomaly_alert
+            , on_trend
+            , training_date
+            from forecasts 
+    """)
+
+
+
+  def create_raw_granular_forecast_view(self, target_catalog, target_schema):
+    """
+    Forecast Reporting view for granular sku i.e. STANDARD_ALL_PURPOSE_COMPUTE, PREMIUM_ALL_PURPOSE_COMPUTE
+    """
+    self.spark.sql(f"""
+          create view if not exists {target_catalog}.{target_schema}.vw_dbu_granular_forecasts
           as 
           select 
           f.ds as date
