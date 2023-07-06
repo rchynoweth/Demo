@@ -44,6 +44,12 @@ spark.sql(f'use schema {schema_name}')
 
 # COMMAND ----------
 
+spark.sql("SET spark.databricks.delta.properties.defaults.minReaderVersion = 2;")
+spark.sql("SET spark.databricks.delta.properties.defaults.minWriterVersion = 7;")
+spark.sql("SET spark.databricks.delta.write.dataFilesToSubdir = true")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Create Empty Table 
 
@@ -119,11 +125,6 @@ dbutils.fs.ls(table_location+'/_delta_log')
 
 # COMMAND ----------
 
-spark.sql("SET spark.databricks.delta.properties.defaults.minReaderVersion = 2;")
-spark.sql("SET spark.databricks.delta.properties.defaults.minWriterVersion = 7;")
-
-# COMMAND ----------
-
 df = spark.read.format('csv').option('header', 'true').option('delimiter', ';').load('/databricks-datasets/retail-org/products/*.csv')
 display(df)
 
@@ -191,21 +192,12 @@ dbutils.fs.ls(storage_location)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SHOW STORAGE CREDENTIALS;
-
-# COMMAND ----------
-
-spark.sql(f"""
-CREATE EXTERNAL LOCATION s3_remote URL '{storage_location}'
-WITH (STORAGE CREDENTIAL s3_remote_cred)
-COMMENT 'Default source for AWS exernal data';       
-""")
-
-# COMMAND ----------
-
 # drop if exists 
 spark.sql("drop table if exists ext_products")
+# dbutils.fs.rm(storage_location, True)
+
+# COMMAND ----------
+
 
 # create table 
 spark.sql(f"""
@@ -234,11 +226,36 @@ display(df)
 
 # COMMAND ----------
 
+table_location = spark.sql('describe extended ext_products').filter(col('col_name')=='Location').select('data_type').collect()[0][0]
+dbutils.fs.ls(table_location)
+
+# COMMAND ----------
+
 df.write.mode('append').saveAsTable('ext_products')
 
 # COMMAND ----------
 
-dbutils.fs.ls(table_location)
+# MAGIC %sql
+# MAGIC select count(1) from ext_products
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC One of the methods of data access in BigQuery for Iceberg is using the metadata file directly. To do so we need to update the BQ table definition then refresh the table inside of BQ. 
+# MAGIC
+# MAGIC We will do so with a create or replace table statement
+
+# COMMAND ----------
+
+metadata_path = [f.path for f in dbutils.fs.ls(table_location+'/metadata') if '.json' in f.path][-1]
+
+big_query_tbl_def = f"""
+CREATE OR REPLACE EXTERNAL TABLE rac_dataset.ext_products2
+OPTIONS (
+    format = 'ICEBERG',
+    uris = ["{metadata_path}"]
+)
+"""
 
 # COMMAND ----------
 
