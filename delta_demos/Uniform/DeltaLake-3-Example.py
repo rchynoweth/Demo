@@ -9,6 +9,7 @@
 # MAGIC 1. A Google Service Account attached to the cluster in order to list GCS objects   
 # MAGIC     - See "Advanced options"
 # MAGIC 1. GCP Databricks 
+# MAGIC 1. Install the `google-cloud-bigquery` PyPi package on the cluster 
 # MAGIC
 # MAGIC This notebook will provide a brief example on how to leverage this capability. We will do it in two different ways:
 # MAGIC 1. Create a brand new table with the appropriate settings then insert data into the table 
@@ -24,17 +25,20 @@
 # COMMAND ----------
 
 from pyspark.sql.functions import *
+from libs.bq_connect import BQConnect
 import time 
 
 # COMMAND ----------
 
 dbutils.widgets.text('CatalogName', 'main') # assumes catalog exists
 dbutils.widgets.text('SchemaName', '')
+dbutils.widgets.text('BQProject', '')
 
 # COMMAND ----------
 
 catalog_name = dbutils.widgets.get('CatalogName')
 schema_name = dbutils.widgets.get('SchemaName')
+bq_project = dbutils.widgets.get('BQProject')
 
 # COMMAND ----------
 
@@ -193,7 +197,7 @@ dbutils.fs.ls(storage_location)
 # COMMAND ----------
 
 # drop if exists 
-spark.sql("drop table if exists ext_products")
+# spark.sql("drop table if exists ext_products")
 # dbutils.fs.rm(storage_location, True)
 
 # COMMAND ----------
@@ -201,7 +205,7 @@ spark.sql("drop table if exists ext_products")
 
 # create table 
 spark.sql(f"""
-CREATE TABLE ext_products (
+CREATE TABLE IF NOT EXISTS ext_products (
     product_id STRING,
     product_category STRING,
     product_name STRING,
@@ -243,19 +247,23 @@ df.write.mode('append').saveAsTable('ext_products')
 # MAGIC %md
 # MAGIC One of the methods of data access in BigQuery for Iceberg is using the metadata file directly. To do so we need to update the BQ table definition then refresh the table inside of BQ. 
 # MAGIC
-# MAGIC We will do so with a create or replace table statement
+# MAGIC The recommended pattern is to use the BigLake Catalog which we will also show how this is done, please refer to the README. 
 
 # COMMAND ----------
 
-metadata_path = [f.path for f in dbutils.fs.ls(table_location+'/metadata') if '.json' in f.path][-1]
+bq_connect = BQConnect(project=bq_project)
 
-big_query_tbl_def = f"""
-CREATE OR REPLACE EXTERNAL TABLE rac_dataset.ext_products2
-OPTIONS (
-    format = 'ICEBERG',
-    uris = ["{metadata_path}"]
-)
-"""
+# COMMAND ----------
+
+metadata_path = bq_connect.get_latest_iceberg_metadata(table_location)
+
+big_query_tbl_def = bq_connect.format_table_update_query(dataset='rac_dataset', table='ext_products2', metadata_path=metadata_path)
+
+print(big_query_tbl_def)
+
+# COMMAND ----------
+
+bq_connect.execute_query(big_query_tbl_def)
 
 # COMMAND ----------
 
