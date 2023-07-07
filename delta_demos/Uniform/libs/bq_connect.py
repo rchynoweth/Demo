@@ -19,7 +19,7 @@ class BQConnect():
 
   def format_table_update_query(self, dataset, table, metadata_path):
     sql = f"""
-          CREATE OR REPLACE EXTERNAL TABLE rac_dataset.ext_products2
+          CREATE OR REPLACE EXTERNAL TABLE {dataset}.{table}
           OPTIONS (
               format = 'ICEBERG',
               uris = ["{metadata_path}"]
