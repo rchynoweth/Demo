@@ -1,37 +1,32 @@
 from pyspark.sql.functions import *
 
+
 class DataCollector():
 
   def __init__(self, spark):
-    self.spark = spark # pass the spark object for DDL actions
+    self.spark = spark 
 
-  def get_catalogs():
+  def get_catalogs(self):
     """
     Get all catalogs in the metastore
     """
-    return [i.catalog for i in self.spark.sql('show catalogs').collect()]
+    self.catalogs = [i.catalog for i in self.spark.sql('show catalogs').collect()]
+    return self.catalogs
   
-  def get_schemas(catalog_name='main'):
+  def get_schemas(self, catalog_name='main'):
     """
     Get all the schemas in a catalog as a python list
     """
     self.spark.sql(f'use {catalog_name}')
-    schema_list = [i.databaseName for i in self.spark.sql('show schemas').select('databaseName').collect()]
-    return schema_list
-  
-  def run_schema_analysis(catalog_name, schema_name, no_scan=True):
-    """
-    Runs Analysis on the entire schema 
-    - Recommended to keep no_scan == True so that it runs faster
-    - no_scan = True will not get the rows 
-    """
-    self.spark.sql(f'use {catalog_name}')
-    sql_command = f"ANALYZE TABLES IN {schema_name} COMPUTE STATISTICS"
-    sql_command += " NOSCAN" if no_scan else ""
-    self.spark.sql(sql_command)
+    df = (
+      self.spark.sql('show schemas')
+      .select(col('databaseName').alias('schema_name'))
+      .withColumn('catalog_name', lit(catalog_name))
+    )
+    return df.collect()
 
 
-  def get_table_bytes(catalog_name, schema_name, table_name):
+  def get_table_bytes(self, catalog_name, schema_name, table_name):
     """
     Describes the table and collects the table size in bytes
     """

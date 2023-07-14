@@ -86,6 +86,7 @@ class DBUProphetForecast():
                 from system.billing.usage
 
                 where usage_unit = 'DBU'
+                and usage_date < current_date() -- we don't want a partial day
                 """)
       )
 

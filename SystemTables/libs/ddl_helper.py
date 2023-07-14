@@ -55,7 +55,7 @@ class DDLHelper():
     """)
 
 
-   def create_granular_forecast_view(self, target_catalog, target_schema):
+  def create_granular_forecast_view(self, target_catalog, target_schema):
     """
     Forecast Reporting view for granular sku i.e. STANDARD_ALL_PURPOSE_COMPUTE, PREMIUM_ALL_PURPOSE_COMPUTE
     """

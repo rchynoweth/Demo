@@ -14,8 +14,8 @@ from libs.ddl_helper import DDLHelper
 
 # DBTITLE 1,Parameters
 # target catalog/schema are the data source tables to create the view
-dbutils.widgets.text('TargetCatalog', '')
-dbutils.widgets.text('TargetSchema', '')
+dbutils.widgets.text('TargetCatalog', 'main')
+dbutils.widgets.text('TargetSchema', 'prophet_forecast_schema')
 target_catalog = dbutils.widgets.get('TargetCatalog')
 target_schema = dbutils.widgets.get('TargetSchema')
 
@@ -85,57 +85,6 @@ display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_fore
 
 # DBTITLE 1,Model Inference DBUs
 display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_granular_forecasts').filter(col('sku').contains('INFERENCE')) )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Rollup DBU Forecasts
-# MAGIC
-# MAGIC This notebook sources data from Databricks System Tables (`system.operational_data.billing_logs`). Generates Prophet forecasts by Consolidated SKU and Workspace. 
-# MAGIC
-# MAGIC SKUs are aggregated to the top level categories: `ALL_PURPOSE`, `DLT`, `JOBS`, `MODEL_INFERENCE`, and `SQL`. 
-# MAGIC
-# MAGIC This notebook generates and evaluates forecasts. Data is saved to the following tables: 
-# MAGIC 1. `input_dbus_by_date_system_sku_workspace`  
-# MAGIC 1. `output_dbu_forecasts_by_date_system_sku_workspace`  
-# MAGIC 1. `dbu_forecast_evals_by_date_system_sku_workspace`  
-# MAGIC 1. `vw_dbu_granular_forecasts`   
-
-# COMMAND ----------
-
-# DBTITLE 1,Create Consolidated Forecast View
-# create view for reporting visuals
-ddl_help.create_consolidated_forecast_view(target_catalog=target_catalog, target_schema=target_schema)
-
-# COMMAND ----------
-
-# DBTITLE 1,All DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts') )
-
-# COMMAND ----------
-
-# DBTITLE 1,All Purpose DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='ALL_PURPOSE') )
-
-# COMMAND ----------
-
-# DBTITLE 1,Jobs DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='JOBS') )
-
-# COMMAND ----------
-
-# DBTITLE 1,DLT DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='DLT') )
-
-# COMMAND ----------
-
-# DBTITLE 1,SQL DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='SQL') )
-
-# COMMAND ----------
-
-# DBTITLE 1,Model Inference DBUs
-display(spark.read.table(f'{target_catalog}.{target_schema}.vw_dbu_forecasts').filter(col('sku')=='MODEL_INFERENCE') )
 
 # COMMAND ----------
 

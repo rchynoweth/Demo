@@ -17,7 +17,7 @@ display(spark.sql('select * from test'))
 
 # COMMAND ----------
 
-time.sleep(5)
+time.sleep(500)
 
 # COMMAND ----------
 

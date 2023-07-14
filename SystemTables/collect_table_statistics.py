@@ -1,6 +1,5 @@
 # Databricks notebook source
-from multiprocessing import Pool 
-
+from libs.data_collector import DataCollector
 from pyspark.sql.functions import *
 
 # COMMAND ----------
@@ -10,33 +9,34 @@ spark.sql(f'use catalog {catalog}')
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC ANALYZE TABLES IN main.prophet_forecast_schema COMPUTE STATISTICS NOSCAN
+dc = DataCollector(spark=spark)
+catalog_list = dc.get_catalogs()
+schema_list = dc.get_schemas(catalog_name='main')
+schema_list
 
 # COMMAND ----------
 
-from pyspark.sql.functions import regexp_replace, col
-
-df = df.withColumn("data_type", regexp_replace(col("data_type"), " bytes", ""))
-df = df.withColumn("data_type_double", df["data_type"].cast("double"))
+dc.run_parallel_schema_analysis(schema_list=schema_list)
 
 # COMMAND ----------
 
-sql_command = f"ANALYZE TABLES IN prophet_forecast_schema COMPUTE STATISTICS NOSCAN"
-spark.sql(sql_command)
-desc_sql_command = f" DESC EXTENDED main.prophet_forecast_schema.sku_cost_lookup"
-df = (spark.sql(desc_sql_command)
-      .filter(col('col_name')=='Statistics')
-      .withColumn("data_type", regexp_replace(col("data_type"), " bytes", ""))
-      .withColumn("data_type_double", col('data_type').cast("double"))
-      .select('data_type_double')
-    )
-display(df)
+def run_schema_analysis(row):
+  """
+  Runs Analysis on the entire schema 
+  :param item: a row item with catalog and schema names 
+  """
+  catalog_name, schema_name = row.catalog_name, row.schema_name
+  spark.sql(f'use {catalog_name}')
+  sql_command = f"ANALYZE TABLES IN {schema_name} COMPUTE STATISTICS NOSCAN"
+  spark.sql(sql_command)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC show catalogs
+results = pool.map(run_schema_analysis, schema_list)
+
+# COMMAND ----------
+
+
 
 # COMMAND ----------
 

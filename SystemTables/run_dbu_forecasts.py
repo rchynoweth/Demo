@@ -20,12 +20,12 @@ from libs.dbu_prophet_forecast import DBUProphetForecast
 # COMMAND ----------
 
 # DBTITLE 1,Create forecast obj
-dpf = DBUProphetForecast(forecast_periods=28)
+dpf = DBUProphetForecast(forecast_periods=180)
 
 # COMMAND ----------
 
 # DBTITLE 1,Parameters
-dbutils.widgets.text('TargetCatalog', 'ryan_chynoweth_catalog')
+dbutils.widgets.text('TargetCatalog', 'main')
 dbutils.widgets.text('TargetSchema', 'prophet_forecast_schema')
 target_catalog = dbutils.widgets.get('TargetCatalog')
 target_schema = dbutils.widgets.get('TargetSchema')
