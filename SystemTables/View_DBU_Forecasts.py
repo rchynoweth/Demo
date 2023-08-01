@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # View DBU Forecasts
 # MAGIC
-# MAGIC This notebook sources data from Databricks System Tables (`system.operational_data.billing_logs`). Generates Prophet forecasts by SKU and Workspace. 
+# MAGIC This notebook sources data from Databricks System Tables (`system.usage.billing`). Generates Prophet forecasts by SKU and Workspace. 
 
 # COMMAND ----------
 
