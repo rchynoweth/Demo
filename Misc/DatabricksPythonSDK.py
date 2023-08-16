@@ -18,45 +18,25 @@ import time
 
 w = WorkspaceClient()
 
+pool_id = '0816-165607-drub6-pool-au98236n'
+
 for p in w.instance_pools.list():
-  print(p.instance_pool_name)
+  if p.instance_pool_id == pool_id:
+    print(f"{p.instance_pool_name} | {p.instance_pool_id}")
 
 # COMMAND ----------
 
-w.clusters.list_node_types()
+instance_pool = w.instance_pools.get(pool_id)
+instance_pool
 
 # COMMAND ----------
 
-created = w.instance_pools.create(instance_pool_name=f'sdk-{time.time_ns()}', node_type_id='r3.xlarge')
+w.instance_pools.edit(instance_pool_id=pool_id, max_capacity=10, min_idle_instances=0, instance_pool_name='rac_pool', node_type_id='Standard_DS3_v2')
 
 # COMMAND ----------
 
-job_id = 327770081688124
-job_name = 'test_queue'
-
-# COMMAND ----------
-
-job1 = w.jobs.run_now(job_id=job_id)
-
-# COMMAND ----------
-
-job2 = w.jobs.run_now(job_id=job_id)
-
-# COMMAND ----------
-
-job3 = w.jobs.run_now(job_id=job_id)
-
-# COMMAND ----------
-
-job1.result()
-
-# COMMAND ----------
-
-job2.result()
-
-# COMMAND ----------
-
-job3.result()
+instance_pool = w.instance_pools.get(pool_id)
+instance_pool
 
 # COMMAND ----------
 
