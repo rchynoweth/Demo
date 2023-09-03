@@ -3,7 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# data files to exclude
+*.delta 
+*.parquet
 
+outputs-*
 *.databricks
 *.metals
 *.vscode
