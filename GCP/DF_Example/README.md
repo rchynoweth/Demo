@@ -39,6 +39,7 @@ Seems like using Dataflow to dump data into GCS is the best option by far. But w
 - [Beam Datalake](https://github.com/nanhu-lab/beam-datalake)
 - [Delta Lake Documentation](https://delta-io.github.io/delta-rs/python/usage.html#querying-delta-tables)
 - [ParquetIO](https://beam.apache.org/releases/pydoc/2.45.0/_modules/apache_beam/io/parquetio.html)
+- [BigQueryIO](https://beam.apache.org/releases/pydoc/2.45.0/_modules/apache_beam/io/gcp/bigtableio.html)
 
 
 Notes:
