@@ -40,6 +40,7 @@ Seems like using Dataflow to dump data into GCS is the best option by far. But w
 - [Delta Lake Documentation](https://delta-io.github.io/delta-rs/python/usage.html#querying-delta-tables)
 - [ParquetIO](https://beam.apache.org/releases/pydoc/2.45.0/_modules/apache_beam/io/parquetio.html)
 - [BigQueryIO](https://beam.apache.org/releases/pydoc/2.45.0/_modules/apache_beam/io/gcp/bigtableio.html)
+- [Creating Jobs from Notebook](https://cloud.google.com/dataflow/docs/guides/interactive-pipeline-development#launch-jobs-from-pipeline)
 
 
 Notes:
@@ -83,10 +84,31 @@ Notes:
 
 1. How do I run the local code on GCP Dataflow?  
     ```
-    python -m GCP.DF_Example.test_run \
+    python -m GCP.DF_Example.run_delta \
         --region us-west1 \
-        --output gs://racgcs/results/outputs \
         --runner DataflowRunner \
         --project fe-dev-sandbox \
         --temp_location gs://racgcs/tmp/ 
     ```
+
+
+
+
+### other
+
+
+Define an arrow schema if needed. 
+
+```python
+import pyarrow as pa
+
+data_schema = pa.schema([
+            ('product_id', pa.string()),  # Define the schema of the Parquet file
+            ('product_category', pa.string()),
+            ('product_name', pa.string()),
+            ('sales_price', pa.string()),
+            ('EAN13', pa.string()),
+            ('EAN5', pa.string()),
+            ('product_unit', pa.string())
+        ])
+```

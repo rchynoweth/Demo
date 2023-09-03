@@ -7,7 +7,7 @@ from apache_beam.transforms import DoFn, PTransform, window, ParDo
 
 
 
-# Stolen from parquet reader
+# Stolen from parquet reader - converts arrow table to PCollection
 class ArrowTableToRowDictionaries(DoFn):
     """ A DoFn that consumes an Arrow table and yields a python dictionary for
     each row in the table."""
@@ -28,16 +28,14 @@ class ArrowTableToRowDictionaries(DoFn):
 
 
 
-
-
-class ReadDeltaTableAsArrow():
+class DeltaTableReader():
 
     def read_table(self, path):
         # read delta table 
         dt = DeltaTable(path)
         arrow_dt = dt.to_pyarrow_table()
     
-        return arrow_dt
+        return (arrow_dt, arrow_dt.schema)
     
 
 
