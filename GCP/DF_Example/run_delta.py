@@ -4,8 +4,8 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.options.pipeline_options import SetupOptions
 from apache_beam.io.parquetio import WriteToParquet
 
-from GCP.DF_Example.deltaio import WriteToDeltaTable, ArrowTableToRowDictionaries, DeltaTableReader
-
+# from GCP.DF_Example.libs.deltaio import WriteToDeltaTable, ArrowTableToRowDictionaries, DeltaTableReader
+from libs.deltaio import WriteToDeltaTable, ArrowTableToRowDictionaries, DeltaTableReader
 
 
 def run(argv=None, save_main_session=True):
@@ -26,9 +26,10 @@ def run(argv=None, save_main_session=True):
     pipeline_options = PipelineOptions(pipeline_args)
     pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
 
-
-    # Create an Apache Beam pipeline
-    with beam.Pipeline() as pipeline:
+    # pipeline options determines where to run it 
+    # I was missing them so it was just running locally. 
+    # with beam.Pipeline() as pipeline:
+    with beam.Pipeline(options=pipeline_options) as pipeline:
         # read delta table 
         delta_reader = DeltaTableReader()
         arrow_dt, arrow_schema = delta_reader.read_table(known_args.input)

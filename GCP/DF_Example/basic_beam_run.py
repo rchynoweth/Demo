@@ -1,6 +1,5 @@
 
 import argparse
-import logging
 import re
 import apache_beam as beam
 from apache_beam.io import ReadFromText
