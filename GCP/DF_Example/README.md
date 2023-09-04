@@ -40,7 +40,7 @@ Dataflow Templates are great. But they are point A to point B "streaming" soluti
         --output gs://racgcs/results/outputs \
         --runner DataflowRunner \
         --project fe-dev-sandbox \
-        --temp_location gs://racgcs/tmp/ &> SomeFile.txt  
+        --temp_location gs://racgcs/tmp/ 
     ```
 
 
@@ -50,7 +50,12 @@ Dataflow Templates are great. But they are point A to point B "streaming" soluti
     python -m GCP.DF_Example.test_run \ --outputs outputs
     ```
 
-1. Run the local code on the Dataflow Service.  
+1. To run the service on Dataflow we will need to package the deltaio file as a tarball. To do so run the following command from the `DF_Example` directory. 
+    ```
+    python setup.py sdist
+    ```
+
+1. Run the local code on the Dataflow Service using the following command in the repository root. 
     ```
     python -m GCP.DF_Example.run_delta \
         --region us-west1 \
