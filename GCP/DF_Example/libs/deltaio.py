@@ -107,8 +107,6 @@ class DeltaWriteFn(DoFn):
 
 
     def process(self, data):
-
-
         write_deltalake(
             self.beam_options.get('table_path'), 
             data, 

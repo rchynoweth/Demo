@@ -1,9 +1,12 @@
 # Dataflow Sample
 
-Dataflow Templates are great. But they are point A to point B "streaming" solutions with a high priority on getting data into BigQuery for analytics. I think of it has an integration tool that ingests data into a batch system (BQ) with little support for ML/AI. In this example, we go beyond the templates and develop a custom job that read/writes data to an from Delta Lake. 
+Dataflow Templates are great. But they are point A to point B "streaming" solutions with a high priority on getting data into BigQuery for more data processing and analytics. Dataflow should be considered a data integration tool that ingests data into a batch system (BQ) with little support for ML/AI. In this example, we go beyond the templates and develop a custom job that read/writes data to an from Delta Lake. 
+
 
 
 ## Setup
+
+To set up a development environment, we will create a local Python virtual environment running the following commands. 
 
 1. Create Environment 
     ```
@@ -32,7 +35,7 @@ Dataflow Templates are great. But they are point A to point B "streaming" soluti
     python -m apache_beam.examples.wordcount --output ./GCP/DF_Example/outputs
     ```
 
-1. Run the sample code remotely with the following from the repository root. Please note that the following command will launch the job on the Dataflow service then save results to an output file (`SomeFile.txt`)
+1. Run the sample code remotely with the following from the repository root. 
     ```
     python -m apache_beam.examples.wordcount \
         --region us-west1 \
@@ -45,9 +48,9 @@ Dataflow Templates are great. But they are point A to point B "streaming" soluti
 
 
 
-1. Now what if I have local code and want to run it locally? 
+1. Great! It works with an out of the box sample, but what if I have custom code on my desktop. You can run the following to execute the code locally.  
     ```
-    python -m GCP.DF_Example.test_run \ --outputs outputs
+    python -m GCP.DF_Example.run_delta 
     ```
 
 1. To run the service on Dataflow we will need to package the deltaio file as a tarball. To do so run the following command from the `DF_Example` directory. 
@@ -66,8 +69,8 @@ Dataflow Templates are great. But they are point A to point B "streaming" soluti
         --extra_package ./GCP/DF_Example/dist/deltaio-0.1.tar.gz
     ```
 
-GCP Dataflow Job that Reads and Writes a Delta Lake Table
 
+Please see below for the GCP Dataflow Job that Reads and Writes a Delta Lake Table
 ![](./imgs/DeltaLakeJobRun.png)
 
 
@@ -75,7 +78,7 @@ GCP Dataflow Job that Reads and Writes a Delta Lake Table
 
 
 
-### Resources 
+### Misc Resources 
 - [Python Demo](https://medium.com/google-cloud/understanding-the-dataflow-quickstart-for-python-tutorial-e134f39564c7)
 - [Python Quickstart](https://cloud.google.com/dataflow/docs/quickstarts/create-pipeline-python)  
 - [SDK](https://cloud.google.com/sdk/docs/install)  
@@ -87,22 +90,7 @@ GCP Dataflow Job that Reads and Writes a Delta Lake Table
 - [Creating Jobs from Notebook](https://cloud.google.com/dataflow/docs/guides/interactive-pipeline-development#launch-jobs-from-pipeline)
 - [Jobs with Local Dependencies](https://stackoverflow.com/questions/46604870/apache-beam-local-python-dependencies)
 - [Beam Local Dependencies](https://beam.apache.org/documentation/sdks/python-pipeline-dependencies/)
+- [Change Data Feed](https://docs.delta.io/2.0.0/delta-change-data-feed.html)
+- [Delta Streaming](https://delta-io.github.io/delta-rs/python/api_reference.html?highlight=open_output_stream#module-deltalake.fs)
+- [Table Performance Discussion](https://github.com/delta-io/delta-rs/issues/1569)
 
-Notes:
-- GCP Dataflow supports Python 3.5 to 3.9 support 
-    - DBR 13.3 LTS is using Python 3.10.6
-    - DBR 12.2 LTS is using 3.9.5 
-- Define an arrow schema if needed. 
-    ```python
-    import pyarrow as pa
-
-    data_schema = pa.schema([
-                ('product_id', pa.string()),  # Define the schema of the Parquet file
-                ('product_category', pa.string()),
-                ('product_name', pa.string()),
-                ('sales_price', pa.string()),
-                ('EAN13', pa.string()),
-                ('EAN5', pa.string()),
-                ('product_unit', pa.string())
-            ])
-    ```
