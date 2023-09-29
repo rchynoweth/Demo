@@ -251,19 +251,23 @@ df.write.mode('append').saveAsTable('ext_products')
 
 # COMMAND ----------
 
-bq_connect = BQConnect(project=bq_project)
+bq_connect = BQConnect(project=bq_project, dbutils=dbutils)
 
 # COMMAND ----------
 
 metadata_path = bq_connect.get_latest_iceberg_metadata(table_location)
 
-big_query_tbl_def = bq_connect.format_table_update_query(dataset='rac_dataset', table='ext_products2', metadata_path=metadata_path)
+big_query_tbl_def = bq_connect.format_table_update_query(dataset='rac_dataset', table='ext_products', metadata_path=metadata_path)
 
 print(big_query_tbl_def)
 
 # COMMAND ----------
 
 bq_connect.execute_query(big_query_tbl_def)
+
+# COMMAND ----------
+
+print(metadata_path)
 
 # COMMAND ----------
 
