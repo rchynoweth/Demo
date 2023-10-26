@@ -24,6 +24,8 @@ for p in w.instance_pools.list():
   if p.instance_pool_id == pool_id:
     print(f"{p.instance_pool_name} | {p.instance_pool_id}")
 
+
+
 # COMMAND ----------
 
 instance_pool = w.instance_pools.get(pool_id)
@@ -31,7 +33,7 @@ instance_pool
 
 # COMMAND ----------
 
-w.instance_pools.edit(instance_pool_id=pool_id, max_capacity=10, min_idle_instances=0, instance_pool_name='rac_pool', node_type_id='Standard_DS3_v2')
+w.instance_pools.edit(instance_pool_id=pool_id, max_capacity=5, min_idle_instances=0, instance_pool_name='rac_pool', node_type_id='Standard_DS3_v2')
 
 # COMMAND ----------
 
