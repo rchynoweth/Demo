@@ -109,16 +109,35 @@ bq_connect.execute_query(big_query_tbl_def)
 Now you can easily query the table from Big Query as an Iceberg table.
 ![](./imgs/MetadataAccessResults.png)
 
+## Delta Lake Support for BigQuery
 
-## BigLake Metastore Approach (Recommended) - TODO
+
+First you will need to create a connection object via cloud shell with the following command.  
+```
+bq mk --connection --location=US --project_id=<PROJECT> --connection_type=CLOUD_RESOURCE <connection name>
+```
+
+Please make note out the output of the command as it will return the connection string using in the SQL query below. 
+
+Next you can create an external table in BigQuery to ingest Enterprise IT data from Delta Lake into BigQuery internal tables for domain solution. 
+
+```sql
+CREATE OR REPLACE EXTERNAL TABLE fe-dev-sandbox.rac_dataset.ext_products_non_uniform 
+WITH CONNECTION `<connection object>` 
+OPTIONS ( format = "PARQUET", 
+  uris = ["gs://<bucket>/<table_path>/_symlink_format_manifest/manifest"], 
+  file_set_spec_type = 'NEW_LINE_DELIMITED_MANIFEST', 
+  max_staleness = INTERVAL  1800 SECOND, 
+  metadata_cache_mode = 'AUTOMATIC' ); 
 
 
-- https://cloud.google.com/bigquery/docs/iceberg-tables#create-using-biglake-metastore
-- Hive Compatible Catalog but is not HMS: https://cloud.google.com/bigquery/docs/manage-open-source-metadata#:~:text=Stay%20organized%20with%20collections%20Save,access%20data%20from%20multiple%20sources.
+  select count(*) from fe-dev-sandbox.rac_dataset.ext_products_non_uniform ;
+```
+
 
 ### Resources 
 
 - [Protocol.md](https://github.com/delta-io/delta/blob/master/PROTOCOL.md#writer-requirements-for-icebergcompatv1)  
 - [Column Mapping](https://docs.databricks.com/delta/delta-column-mapping.html)  
 - [Uniform](https://docs.databricks.com/delta/uniform.html)
-- Query with BigQuery via 
+- [Query via BigLake](https://cloud.google.com/bigquery/docs/iceberg-tables#create-using-biglake-metastore)
