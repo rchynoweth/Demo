@@ -23,7 +23,7 @@ kafka_bootstrap_servers_tls = dbutils.secrets.get("oetrta", "kafka-bootstrap-ser
 # COMMAND ----------
 
 # Set up topic 
-# Full username, e.g. "aaron.binns@databricks.com"
+# Full username
 username = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().apply('user')
 
 # Short form of username, suitable for use as part of a topic name.
@@ -34,6 +34,7 @@ project_dir = f"/home/{username}/oetrta/kafka_test"
 
 checkpoint_location = f"{project_dir}/kafka_checkpoint_output"
 
+output_topic = f"{user}_oetrta_kafka_test-1-output"
 input_topic = f"{user}_oetrta_kafka_test-1-input"
 
 # COMMAND ----------
@@ -76,6 +77,7 @@ input_schema = input_df.schema
 
 # COMMAND ----------
 
+# DBTITLE 1,Read Data From Kafka
 # Read Data
 startingOffsets = "earliest"
 
@@ -88,9 +90,9 @@ kafka = (spark.readStream
   .option("startingOffsets", startingOffsets )
   .load())
 
+score_df = kafka.select(col("key").cast("string").alias("eventId"), from_json(col("value").cast("string"), input_schema).alias("json")).select('eventId', 'json.*')
 
-read_stream2 = kafka.select(col("key").cast("string").alias("eventId"), from_json(col("value").cast("string"), input_schema).alias("json")).select('eventId', 'json.*')
-display(read_stream2)
+score_df = score_df.repartition('sku')
 
 # COMMAND ----------
 
@@ -105,47 +107,45 @@ def generate_forecast_udf(history_pd):
 
 # COMMAND ----------
 
+# DBTITLE 1,Function to Score Data
 def score_prophet_model(df, epoch_id):
-  score_df = df.select(col("key").cast("string").alias("eventId"), from_json(col("value").cast("string"), input_schema).alias("json")).select('eventId', 'json.*')
+  # score_df = df.select(col("key").cast("string").alias("eventId"), from_json(col("value").cast("string"), input_schema).alias("json")).select('eventId', 'json.*')
 
-
+  # score input
   results = (
-    score_df
+    df
       .groupBy('sku', 'sendTime')
       .applyInPandas(generate_forecast_udf, schema=pf.forecast_result_schema)
       .withColumn('scoreDatetime', current_timestamp() )
       .withColumn("eventId", uuidUdf())
       .select(col("eventId").alias("key"), to_json(struct(col('sku'), col('ds'), col('y'), col('yhat_upper'), col('yhat_lower'), col('yhat'), col('scoreDatetime') ,col('sendTime'))).alias("value"))
   )
-  return results 
+  
+  # write results out
+  (results.write
+  .format("kafka")
+  .option("kafka.bootstrap.servers", kafka_bootstrap_servers_tls )
+  .option("kafka.security.protocol", "SSL")
+  .option("topic", output_topic)
+  .save()
+  )
 
 
 # COMMAND ----------
 
-# write to Delta Lake
-# kafka.writeStream.foreachBatch(score_prophet_model).start()
-
-# COMMAND ----------
-
+# DBTITLE 1,Score and Write Data to Kafka
 # Write to Kafka 
 # Clear checkpoint location
 dbutils.fs.rm(checkpoint_location, True)
 
-# For the sake of an example, we will write to the Kafka servers using SSL/TLS encryption
-# Hence, we have to set the kafka.security.protocol property to "SSL"
-out_score = (kafka.writeStream
-  .foreachBatch(score_prophet_model)
-   .format("kafka")
-   .option("kafka.bootstrap.servers", kafka_bootstrap_servers_tls )
-   .option("kafka.security.protocol", "SSL")
-   .option("checkpointLocation", checkpoint_location )
-   .option("topic", input_topic+"_score")
-   .start()
-)
-
+stream_out = (score_df.writeStream
+    .foreachBatch(score_prophet_model)
+    .start()
+    )
 
 # COMMAND ----------
 
+# DBTITLE 1,Read Scored Data From Kafka and Display
 # Read Data
 startingOffsets = "earliest"
 
@@ -154,7 +154,7 @@ startingOffsets = "earliest"
 first_out = (spark.readStream
   .format("kafka")
   .option("kafka.bootstrap.servers", kafka_bootstrap_servers_tls )
-  .option("kafka.security.protocol", "SSL").option("subscribe", input_topic+"_score" )
+  .option("kafka.security.protocol", "SSL").option("subscribe", output_topic )
   .option("startingOffsets", startingOffsets )
   .load())
 
