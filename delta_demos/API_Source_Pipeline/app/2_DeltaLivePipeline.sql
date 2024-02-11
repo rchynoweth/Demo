@@ -6,8 +6,7 @@
 
 CREATE OR REFRESH LIVE TABLE raw_weather_dlt
 COMMENT "The raw data from weather api"
-AS SELECT * FROM json.`/Users/ryan.chynoweth@databricks.com/api_weather_demo/raw/*.json`
-
+AS SELECT * FROM json.`/Volumes/rac_demo_catalog/rac_demo_db/weather_files/raw/*.json`
 
 -- COMMAND ----------
 

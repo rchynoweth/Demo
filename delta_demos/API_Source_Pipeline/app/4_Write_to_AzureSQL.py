@@ -1,9 +1,9 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Azure SQL Sink  
-# MAGIC 
+# MAGIC
 # MAGIC In this example we use the [Spark provided JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html) class to read and write data to Azure SQL. This class can be used to write to a number of different databases. 
-# MAGIC 
+# MAGIC
 # MAGIC Engineers may also use the [Apache Spark connector: SQL Server & Azure SQL](https://docs.microsoft.com/en-us/sql/connect/spark/connector)
 
 # COMMAND ----------
@@ -13,8 +13,15 @@ import time
 # COMMAND ----------
 
 dbutils.widgets.text("schema_name", "") ### Note - this can be a widget or an environment variable  
-
 schema_name = dbutils.widgets.get("schema_name")
+dbutils.widgets.text("catalog_name", "") ### Note - this can be a widget or an environment variable  
+catalog_name = dbutils.widgets.get("catalog_name")
+
+# COMMAND ----------
+
+spark.sql("CREATE CATALOG IF NOT EXISTS {}".format(catalog_name))
+spark.sql(f"use catalog {catalog_name}")
+spark.sql("CREATE SCHEMA IF NOT EXISTS {}".format(schema_name))
 
 # COMMAND ----------
 
@@ -30,7 +37,7 @@ jdbcUrl = "jdbc:sqlserver://{}.database.windows.net:1433;database={};user={};pas
 
 # COMMAND ----------
 
-df = spark.read.table("silver_weather_dlt_daily_recorded_data_agg")
+df = spark.read.table("batch_gold_table")
 display(df)
 
 # COMMAND ----------
@@ -40,7 +47,7 @@ display(df)
  .format("jdbc")
  .mode("overwrite")
  .option("url", jdbcUrl)
- .option("dbtable", "silver_weather_dlt_daily_recorded_data_agg")
+ .option("dbtable", "batch_gold_table")
  .save())
 
 # COMMAND ----------
@@ -49,45 +56,10 @@ display(df)
 sql_df = (spark.read
  .format("jdbc")
  .option("url", jdbcUrl)
- .option("dbtable", "silver_weather_dlt_daily_recorded_data_agg")
+ .option("dbtable", "batch_gold_table")
  .load())
 
 display(sql_df)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Create an External Table
-
-# COMMAND ----------
-
-tableName = "silver_weather_dlt_daily_recorded_data_agg"
-
-sqlQry = '''
-CREATE TABLE IF NOT EXISTS external_{1}
-USING org.apache.spark.sql.jdbc
-OPTIONS (
-  url '{0}',
-  dbtable '{1}',
-  user '{2}',
-  password '{3}')'''.format(jdbcUrl, tableName, jdbcUsername, jdbcPassword)
-
-spark.sql(sqlQry)
-
-# COMMAND ----------
-
-tbl = "external_silver_weather_dlt_daily_recorded_data_agg"
-
-display(
-  spark.sql("""
-    select * 
-    from {}
-  """.format(tbl))
-)
-
-# COMMAND ----------
-
-display(spark.sql("describe extended {}".format(tbl)))
 
 # COMMAND ----------
 
@@ -96,7 +68,7 @@ display(spark.sql("describe extended {}".format(tbl)))
 
 # COMMAND ----------
 
-df = spark.readStream.format('delta').table("silver_weather_dlt_daily_recorded_data_agg")
+df = spark.readStream.format('delta').table("batch_gold_table")
 
 # COMMAND ----------
 
@@ -108,7 +80,7 @@ def stream_to_azsql(microBatchDF, batchId):
    .format("jdbc")
    .mode("overwrite")
    .option("url", jdbcUrl)
-   .option("dbtable", "silver_weather_dlt_daily_recorded_data_agg")
+   .option("dbtable", "silver_batch_gold_table")
    .save()
   )
 
@@ -127,55 +99,6 @@ dbutils.fs.rm(azsql_ckpt, True)
     .start()
 )
 
-
-# COMMAND ----------
-
-time.sleep(60)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Write a few other tables to Azure SQL table 
-
-# COMMAND ----------
-
-
-(spark.sql("SELECT * FROM autoLoader_silver_weather_main")
-   .write
-   .format("jdbc")
-   .mode("overwrite")
-   .option("url", jdbcUrl)
-   .option("dbtable", "autoLoader_silver_weather_main")
-   .save()
-)
-
-# COMMAND ----------
-
-display(spark.read
- .format("jdbc")
- .option("url", jdbcUrl)
- .option("dbtable", "autoLoader_silver_weather_main")
- .load())
-
-# COMMAND ----------
-
-
-(spark.sql("SELECT * FROM batch_gold_table")
-   .write
-   .format("jdbc")
-   .mode("overwrite")
-   .option("url", jdbcUrl)
-   .option("dbtable", "batch_gold_table")
-   .save()
-)
-
-# COMMAND ----------
-
-display(spark.read
- .format("jdbc")
- .option("url", jdbcUrl)
- .option("dbtable", "batch_gold_table")
- .load())
 
 # COMMAND ----------
 

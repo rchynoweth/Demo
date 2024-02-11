@@ -11,9 +11,13 @@ from pyspark.sql.functions import *
 
 dbutils.widgets.text("schema_name", "") ### Note - this can be a widget or an environment variable  
 schema_name = dbutils.widgets.get("schema_name")
+dbutils.widgets.text("catalog_name", "") ### Note - this can be a widget or an environment variable  
+catalog_name = dbutils.widgets.get("catalog_name")
 
 # COMMAND ----------
 
+spark.sql("CREATE CATALOG IF NOT EXISTS {}".format(catalog_name))
+spark.sql(f"use catalog {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS {}".format(schema_name))
 
 # COMMAND ----------

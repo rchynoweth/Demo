@@ -16,9 +16,13 @@ print(user_name)
 
 dbutils.widgets.text("schema_name", "") ### Note - this can be a widget or an environment variable  
 schema_name = dbutils.widgets.get("schema_name")
+dbutils.widgets.text("catalog_name", "") ### Note - this can be a widget or an environment variable  
+catalog_name = dbutils.widgets.get("catalog_name")
 
 # COMMAND ----------
 
+spark.sql("CREATE CATALOG IF NOT EXISTS {}".format(catalog_name))
+spark.sql(f"use catalog {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS {}".format(schema_name))
 
 # COMMAND ----------
@@ -52,11 +56,11 @@ silver_df = (delta_df.select(delta_df.coord.lon.alias('lon')
 # COMMAND ----------
 
 # DBTITLE 1,Append Mode
-append_ckpt = "/Users/{}/api_weather_demo/ckpt/append_ckpt".format(user_name)
+append_ckpt = "/Volumes/rac_demo_catalog/rac_demo_db/weather_files/ckpt/append_ckpt".format(user_name)
 dbutils.fs.rm(append_ckpt, True)
 spark.sql("drop table if exists streaming_silver_weather_main")
 
-(silver_df
+s1 = (silver_df
  .writeStream
  .outputMode("append")
  .option("checkpointLocation", append_ckpt)
@@ -72,11 +76,11 @@ display(silver_df)
 
 # DBTITLE 1,Complete Mode 
 # Replaces the entire table with every
-complete_ckpt = "/Users/{}/api_weather_demo/ckpt/complete_ckpt".format(user_name)
+complete_ckpt = "/Volumes/rac_demo_catalog/rac_demo_db/weather_files/ckpt/complete_ckpt".format(user_name)
 dbutils.fs.rm(complete_ckpt, True)
 spark.sql("drop table if exists streaming_silver_weather_main_agg")
 
-(silver_df
+s2 = (silver_df
  .groupBy("lon", "lat")
  .count()
  .writeStream
@@ -97,8 +101,8 @@ display(spark.sql("SELECT * FROM streaming_silver_weather_main_agg"))
 
 # COMMAND ----------
 
-raw_data_directory = "/Users/{}/api_weather_demo/raw/*.json".format(user_name)
-schema_directory = "/Users/{}/api_weather_demo/schemas/autoLoader_raw_to_silver".format(user_name)
+raw_data_directory = "/Volumes/rac_demo_catalog/rac_demo_db/weather_files/*.json".format(user_name)
+schema_directory = "/Volumes/rac_demo_catalog/rac_demo_db/weather_files/schemas/autoLoader_raw_to_silver".format(user_name)
 
 # COMMAND ----------
 
@@ -163,12 +167,12 @@ def transform_stream(microBatchDF, batchId):
 
 # COMMAND ----------
 
-al_ckpt = "/Users/{}/api_weather_demo/ckpt/al_ckpt".format(user_name)
+al_ckpt = "/Volumes/rac_demo_catalog/rac_demo_db/weather_files/ckpt/al_ckpt".format(user_name)
 dbutils.fs.rm(al_ckpt, True)
 spark.sql("drop table if exists autoLoader_silver_weather_main")
 
 
-(silver_al_df.writeStream
+s3 = (silver_al_df.writeStream
     .format("delta")
     .option("checkpointLocation", al_ckpt)
     .trigger(once=True)
@@ -176,13 +180,13 @@ spark.sql("drop table if exists autoLoader_silver_weather_main")
     .outputMode("update")
     .start()
 )
-
+s3.awaitTermination()
 
 # COMMAND ----------
 
 import time
 
-time.sleep(60)
+time.sleep(120)
 
 # COMMAND ----------
 

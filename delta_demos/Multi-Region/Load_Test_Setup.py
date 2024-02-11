@@ -1,16 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
 # MAGIC # Load Test for Cross Region Latency
-# MAGIC
-# MAGIC Workspace is in us-central-1 which is in Council Bluffs, Iowa. We will use a secondary region as columbus which is in Columbus, Ohio. This is about ~1,250KM which is about the same distance between Los Angeles and The Dalles, Oregon which is ~1,000 miles. 
-# MAGIC
-# MAGIC Bucket Names: 
-# MAGIC - `rac_central`
-# MAGIC - `rac_columbus`
-# MAGIC
-# MAGIC Service Account: 
-# MAGIC - `racsa1@fe-dev-sandbox.iam.gserviceaccount.com`
-# MAGIC - `fe-prod-general-sa@fe-prod-dbx.iam.gserviceaccount.com`
 
 # COMMAND ----------
 
