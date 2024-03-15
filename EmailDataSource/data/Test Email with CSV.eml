@@ -1,0 +1,50 @@
+MIME-Version: 1.0
+Date: Fri, 15 Mar 2024 12:00:40 -0700
+Message-ID: <CAOCJOfukKR_ycvUs54JsHERqetQETF7mwYWRNXwKU4vanTHUUQ@mail.gmail.com>
+Subject: Test Email with CSV
+From: Ryan Chynoweth <ryan.chynoweth@databricks.com>
+To: Ryan Chynoweth <ryan.chynoweth@databricks.com>
+Cc: 24chynoweth@gmail.com
+Content-Type: multipart/mixed; boundary="000000000000c396090613b79f4a"
+
+--000000000000c396090613b79f4a
+Content-Type: multipart/alternative; boundary="000000000000c396080613b79f48"
+
+--000000000000c396080613b79f48
+Content-Type: text/plain; charset="UTF-8"
+
+This is the body of the email.
+
+-- 
+*Ryan Chynoweth*
+*Databricks, Inc. *
+*Senior Solutions Architect*
+*253.797.5729*
+ryan.chynoweth@databricks.com
+
+--000000000000c396080613b79f48
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">This is the body of the email.=C2=A0<br clear=3D"all"><div=
+><br></div><span class=3D"gmail_signature_prefix">-- </span><br><div dir=3D=
+"ltr" class=3D"gmail_signature" data-smartmail=3D"gmail_signature"><div dir=
+=3D"ltr"><div dir=3D"ltr" style=3D"color:rgb(34,34,34)"><b style=3D"color:r=
+gb(19,79,92)">Ryan Chynoweth</b><br><b style=3D"color:rgb(19,79,92)">Databr=
+icks, Inc.=C2=A0</b></div><div dir=3D"ltr" style=3D"color:rgb(34,34,34)"><b=
+ style=3D"color:rgb(19,79,92)">Senior Solutions Architect</b><br><b style=
+=3D"color:rgb(19,79,92)">253.797.5729</b><br><div><a href=3D"mailto:ryan.ch=
+ynoweth@databricks.com" style=3D"color:rgb(17,85,204)" target=3D"_blank">ry=
+an.chynoweth@databricks.com</a></div></div></div></div></div>
+
+--000000000000c396080613b79f48--
+--000000000000c396090613b79f4a
+Content-Type: text/csv; charset="US-ASCII"; name="test_csv.csv"
+Content-Disposition: attachment; filename="test_csv.csv"
+Content-Transfer-Encoding: base64
+X-Attachment-Id: f_ltt0xzj90
+Content-ID: <f_ltt0xzj90>
+
+Q29sdW1uMSxDb2x1bW4yLENvbHVtbjMsQ29sdW1uNAoxLEEsMTAsVHJ1ZQoyLEIsMjAsRmFsc2UK
+MyxDLDMwLFRydWUKNCxELDQwLEZhbHNlCjUsRSw1MCxUcnVlCg==
+--000000000000c396090613b79f4a--

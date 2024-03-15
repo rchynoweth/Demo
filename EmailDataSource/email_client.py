@@ -6,6 +6,9 @@ from pyspark.sql.functions import to_timestamp, lit
 
 
 class EmailClient():
+  """
+  Class to handle reading and extracting data from email messages
+  """
 
   def __init__(self, spark, attachement_folder):
     self.spark = spark 
@@ -15,14 +18,23 @@ class EmailClient():
 
   
   def read_email_file(self, file_path):
+    """
+    Read email message from file 
+    """
     return email.message_from_file(open(file_path))
   
 
   def read_email_from_bytes(self, email_bytes):
+    """
+    Read email message from bytes 
+    """
     return email.message_from_bytes(email_bytes)
   
 
   def load_email_as_spark_df(self, msg):
+    """
+    Load email data into Spark Dataframe
+    """
     data_keys = msg.keys()
     df_columns = ['MIME-Version', 'Date', 'References', 'In-Reply-To', 'Bcc', 'Message-ID', 'Subject', 'From', 'To', 'Cc', 'Content-Type']
     email_data = {}
@@ -42,6 +54,9 @@ class EmailClient():
     return df 
 
   def get_email_body(self, msg):
+    """
+    Get the email body
+    """
     # this only gets the most recent email
     # we don't need the entire thread 
     if msg.get_content_subtype() == 'mixed':
@@ -52,6 +67,9 @@ class EmailClient():
       return None
 
   def get_email_attachement(self, msg):
+    """
+    Get metadata about possible attachements
+    """
     attachment = msg.get_payload()[1]
     file_name = attachment.get_filename()
     attachment_id = attachment.get('Content-ID').strip("<").strip(">")
@@ -65,4 +83,14 @@ class EmailClient():
     
 
   def save_attachment(self, attachment_contents, save_path):
+    """
+    Save the attachement to a file
+    """
     return open(save_path, 'wb').write(attachment_contents)
+  
+
+  def save_email_data_as_table(self, df, table_name):
+    """
+    Save email dataframe to table
+    """
+    df.write.mode('append').saveAsTable(table_name)
