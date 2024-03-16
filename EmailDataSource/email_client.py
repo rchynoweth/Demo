@@ -1,4 +1,5 @@
 import email
+import imaplib
 from email.header import decode_header
 import pandas as pd
 from pyspark.sql.functions import to_timestamp, lit
@@ -10,11 +11,32 @@ class EmailClient():
   Class to handle reading and extracting data from email messages
   """
 
-  def __init__(self, spark, attachement_folder):
+  def __init__(self, spark, attachment_folder):
     self.spark = spark 
-    self.attachement_folder = attachement_folder
+    self.attachment_folder = attachment_folder
 
     self.spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
+
+  def gmail_client(self, username, password): 
+    """ Creates connection to gmail """
+    imap_url = 'imap.gmail.com'
+    # this is done to make SSL connection with GMAIL
+    conn = imaplib.IMAP4_SSL(imap_url) 
+    # logging the user in
+    conn.login(username, password) 
+    return conn
+  
+  def search_gmail(self, conn, mailbox='inbox'):
+    conn.select(mailbox)
+    search_criteria = '(FROM "ryanachynoweth@gmail.com" SUBJECT "This is a test email from my personal account")' # can be a param instead
+    # get email ids that match criteria 
+    result, data = conn.search(None, search_criteria )
+    # get the latest id for purposes of the demo
+    ids = data[0] # data is a list.
+    id_list = ids.split() # ids is a space separated string
+    latest_email_id = id_list[-1] # get the latest
+    result, data = conn.fetch(latest_email_id, "(RFC822)")
+    return data[0][1] 
 
   
   def read_email_file(self, file_path):
@@ -43,12 +65,12 @@ class EmailClient():
 
     pdf = pd.DataFrame(email_data).dropna()
 
-    _, save_path, _, _ ,_ = self.get_email_attachement(msg)
+    _, save_path, _, _ ,_ = self.get_email_attachment(msg)
 
     df = (self.spark.createDataFrame(pdf)
                .withColumn("Date", to_timestamp("Date", "EEE, dd MMM yyyy HH:mm:ss Z"))
                .withColumn("email_body", lit(self.get_email_body(msg)))
-               .withColumn("attachement_location", lit(save_path))
+               .withColumn("attachment_location", lit(save_path))
               )
     
     return df 
@@ -66,14 +88,14 @@ class EmailClient():
     else :
       return None
 
-  def get_email_attachement(self, msg):
+  def get_email_attachment(self, msg):
     """
-    Get metadata about possible attachements
+    Get metadata about possible attachments
     """
     attachment = msg.get_payload()[1]
     file_name = attachment.get_filename()
     attachment_id = attachment.get('Content-ID').strip("<").strip(">")
-    save_path = f"{self.attachement_folder}/{attachment_id}_{file_name}"
+    save_path = f"{self.attachment_folder}/{attachment_id}_{file_name}"
     attachment_contents = attachment.get_payload(decode=True)
 
     if attachment_id is not None:
@@ -84,7 +106,7 @@ class EmailClient():
 
   def save_attachment(self, attachment_contents, save_path):
     """
-    Save the attachement to a file
+    Save the attachment to a file
     """
     return open(save_path, 'wb').write(attachment_contents)
   
