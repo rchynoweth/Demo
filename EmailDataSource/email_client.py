@@ -26,9 +26,9 @@ class EmailClient():
     conn.login(username, password) 
     return conn
   
-  def search_gmail(self, conn, mailbox='inbox'):
+  def search_gmail(self, conn, subject, from_acct, mailbox='inbox'):
     conn.select(mailbox)
-    search_criteria = '(FROM "ryanachynoweth@gmail.com" SUBJECT "This is a test email from my personal account")' # can be a param instead
+    search_criteria = f'(FROM "{from_acct}" SUBJECT "{subject}")' # can be a param instead
     # get email ids that match criteria 
     result, data = conn.search(None, search_criteria )
     # get the latest id for purposes of the demo
@@ -94,7 +94,7 @@ class EmailClient():
     """
     attachment = msg.get_payload()[1]
     file_name = attachment.get_filename()
-    attachment_id = attachment.get('Content-ID').strip("<").strip(">")
+    attachment_id = attachment.get('Content-ID').strip("<").strip(">") if attachment.get('Content-ID') is not None else None
     save_path = f"{self.attachment_folder}/{attachment_id}_{file_name}"
     attachment_contents = attachment.get_payload(decode=True)
 

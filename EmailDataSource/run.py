@@ -73,13 +73,13 @@ display(spark.read.csv(save_path, header=True))
 
 # COMMAND ----------
 
-user = '<your username>'
-password = '<your password>'
+user = ''
+password = ''
 gmail_conn = client.gmail_client(username=user, password=password)
 
 # COMMAND ----------
 
-msg = client.search_gmail(gmail_conn)
+msg = client.search_gmail(gmail_conn, from_acct='24chynoweth@gmail.com', subject='Test Email Download Links')
 
 # COMMAND ----------
 
