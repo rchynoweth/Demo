@@ -19,7 +19,7 @@ catalog_name = dbutils.widgets.get("catalog_name")
 
 # COMMAND ----------
 
-spark.sql("CREATE CATALOG IF NOT EXISTS {}".format(catalog_name))
+# spark.sql("CREATE CATALOG IF NOT EXISTS {}".format(catalog_name))
 spark.sql(f"use catalog {catalog_name}")
 spark.sql("CREATE SCHEMA IF NOT EXISTS {}".format(schema_name))
 

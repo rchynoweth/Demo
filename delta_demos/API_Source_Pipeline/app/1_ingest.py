@@ -60,7 +60,7 @@ weather_api_client = WeatherAiClient(api_key)
 
 # COMMAND ----------
 
-spark.sql(f"create catalog if not exists {catalog_name}")
+# spark.sql(f"create catalog if not exists {catalog_name}")
 spark.sql(f"use catalog {catalog_name}")
 
 # COMMAND ----------
