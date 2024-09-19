@@ -19,7 +19,15 @@ df = spark.sql(
     where service_name = 'jobs' and action_name in ('create', 'update')
   ) 
 
-  select * 
+  select job_id
+      , workspace_id
+      , event_time
+      , email
+      , cron_schedule
+      , quartz_cron_expression
+      , timezone_id
+      , pause_status
+      , job_name
   from jobs_w_schedules
   where cron_schedule is not null
   and rn = 1
