@@ -53,14 +53,16 @@ class EncodingModel(mlflow.pyfunc.PythonModel):
   
 
   def predict(self, context, model_input):
-
-    data = model_input["content"][0] # get the encoded image
-    print(f"---------------- Get individual row {data} | {model_input}", flush=True)
+    print(f"---------------- Get raw input {model_input}", flush=True)
+    # data = model_input["data"][0] # get the encoded image
+    data = model_input[0]
+    print(f"---------------- Get individual row {data}", flush=True)
 
     try :
+      print(f"---------------- Getting embeddings", flush=True)
       # embeddings = model_input.apply(lambda x: model.encode([x])[0])
       embeddings = model.encode(data)
-      print(f"---------------- Get embeddings {embeddings}", flush=True)
+      print(f"---------------- Got embeddings {embeddings}", flush=True)
       return embeddings
     except Exception as e:
       print(f"------------ An exception occurred: {str(e)}", flush=True)
@@ -77,8 +79,14 @@ model = SentenceTransformer(embedding_model_name)
 
 reqs = ["sentence-transformers==3.2.0"]
 content_list = ["This is a string."]
-pdf = pd.DataFrame({'content': content_list})
-api_output = pdf['content'].apply(lambda x: model.encode([x])[0])
+# pdf = pd.DataFrame({'content': content_list})
+# api_output = pdf['content'].apply(lambda x: model.encode([x])[0])
+# {"dataframe_split":{"data":[["Welcome to databricks vector search"]],"columns":[0],"index":[0]}}
+# pdf = pd.DataFrame({'data': content_list})
+# pdf = [{"input":content_list}]
+# api_output = [model.encode(p).tolist() for p in pdf[0]]
+api_output = model.encode(content_list)
+# api_output = pdf['data'].apply(lambda x: model.encode([x])[0])
 
 # COMMAND ----------
 
@@ -86,7 +94,7 @@ api_output = pdf['content'].apply(lambda x: model.encode([x])[0])
 with mlflow.start_run(run_name = "rac_embedding_model"):
   model_name = 'rac_embedding_model'
   run = mlflow.active_run()
-  signature = infer_signature(pdf, api_output, None)
+  signature = infer_signature(content_list, api_output, None)
   mlflow.pyfunc.log_model(
       artifact_path=model_name,
       python_model=EncodingModel(),
@@ -195,4 +203,13 @@ else :
 # MAGIC     -0.03335569053888321
 # MAGIC   ]
 # MAGIC }
+# MAGIC ```
+# MAGIC
+# MAGIC It appears that when pinging the endpoint upon index creation we send several formats to determine which is the one to use. These were the 5 most recent requests from my last attempt: 
+# MAGIC ```
+# MAGIC {"dataframe_split":{"data":[["Welcome to databricks vector search"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
+# MAGIC {"dataframe_split":{"data":[["Welcome to databricks vector search"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
+# MAGIC {"input":["Vector Search probe query for endpoint type: EXTERNAL_MODEL"]}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: ['input']"}
+# MAGIC {"input":["Vector Search probe query for endpoint type: FOUNDATION_MODEL_API"]}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: ['input']"}
+# MAGIC {"dataframe_split":{"data":[["Vector Search probe query for endpoint type: MODELS"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
 # MAGIC ```

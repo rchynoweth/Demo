@@ -19,6 +19,7 @@ dbutils.library.restartPython()
 # COMMAND ----------
 
 # load required libraries
+import time
 from pyspark.sql.types import * 
 from pyspark.sql.functions import * 
 from sentence_transformers import SentenceTransformer
@@ -54,7 +55,7 @@ text_file_schema = "data STRING"
 
 # COMMAND ----------
 
-delete_ckpts = True
+delete_ckpts = False
 if delete_ckpts:
   dbutils.fs.rm(f"{volume_path}/sql_checkpoint", True)
   dbutils.fs.rm(f"{volume_path}/metrics_checkpoint", True)
@@ -133,7 +134,6 @@ dbutils.fs.ls(volume_path)
 # COMMAND ----------
 
 # lets just make sure we can read the data as expected 
-
 display(spark.read.format('text').option("wholeText", "true").load(f"{volume_path}/*.txt"))
 
 display(spark.read.format('text').option("wholeText", "true").load(f"{volume_path}/*.sql"))
@@ -177,6 +177,7 @@ model = SentenceTransformer(embedding_model_name)
 broadcasted_model = sc.broadcast(model)
 
 # Define a Pandas UDF to get embeddings
+# this function would be needed for the direct vector search indexes and not the sync indexes
 @pandas_udf(ArrayType(FloatType()))
 def get_embeddings_udf(text_series):
     model = broadcasted_model.value  # Retrieve the model from the broadcast variable
@@ -191,6 +192,8 @@ sql_df_with_embeddings = sql_df.withColumn("embeddings", get_embeddings_udf(col(
 
 # COMMAND ----------
 
+# create tables to append demo data into. 
+# we need primary keys which is why we are specifying the schemas for the tables
 spark.sql("""
           create table if not exists metrics_table (
             id bigint generated always as identity,
@@ -198,7 +201,6 @@ spark.sql("""
             embeddings ARRAY<FLOAT>
           )
           using delta
-          -- tblproperties (delta.enableChangeDataFeed = true);
           """)
 
 
@@ -209,7 +211,7 @@ spark.sql("""
             embeddings ARRAY<FLOAT>
           )
           using delta
-          tblproperties (delta.enableChangeDataFeed = true);
+          tblproperties (delta.enableChangeDataFeed = true); -- needed for sync indexes
           """)
 
 spark.sql("""
@@ -219,7 +221,6 @@ spark.sql("""
             embeddings ARRAY<FLOAT>
           )
           using delta
-          -- tblproperties (delta.enableChangeDataFeed = true);
           """)
 
 spark.sql("""
@@ -229,7 +230,7 @@ spark.sql("""
             embeddings ARRAY<FLOAT>
           )
           using delta
-          tblproperties (delta.enableChangeDataFeed = true);
+          tblproperties (delta.enableChangeDataFeed = true); -- needed for sync indexes
           """)
 
 # COMMAND ----------
@@ -270,11 +271,13 @@ spark.sql("""
 
 # COMMAND ----------
 
+# wait for all streams to finish writing to the table
 for stream in spark.streams.active:
     stream.awaitTermination()
 
 # COMMAND ----------
 
+# make sure everything aligned as expected 
 display(spark.read.table('metrics_table'))
 display(spark.read.table('sql_table'))
 display(spark.read.table('metrics_sync_table'))
@@ -299,29 +302,13 @@ display(spark.read.table('sql_sync_table'))
 
 # COMMAND ----------
 
+# create client object
 client = VectorSearchClient()
-
-# COMMAND ----------
-
 endpoint_name = 'rac_vs_endpoint'
-all_endpoints = [e.get('name') for e in client.list_endpoints().get('endpoints')]
-
-if endpoint_name not in all_endpoints:
-    client.create_endpoint_and_wait(
-        name=endpoint_name,
-        endpoint_type="STANDARD",
-        verbose=True
-    )
-else : 
-    print("Endpoint already exists.")
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Create Direct Index
-
-# COMMAND ----------
-
+# if we are cleaning up the objects then delete the stuff
 if delete_ckpts:
   index_names = ['metrics_index', 'metrics_sync_index', 'sql_index', 'sql_sync_index']
   for i in index_names:
@@ -331,8 +318,41 @@ if delete_ckpts:
     except :
       print(f"Index {i} does not exist.")
 
+  time.sleep(5)
+  client.delete_endpoint(endpoint_name)
+
 # COMMAND ----------
 
+# if the endpoint does not exist then we need to create it
+all_endpoints = [e.get('name') for e in client.list_endpoints().get('endpoints')]
+
+if endpoint_name not in all_endpoints:
+    client.create_endpoint(
+        name=endpoint_name,
+        endpoint_type="STANDARD"
+    )
+else : 
+    print("Endpoint already exists.")
+
+# COMMAND ----------
+
+# wait for the endpoint to get created
+while True:
+  secs = 30
+  if client.get_endpoint(endpoint_name).get('endpoint_status').get('state') != 'PROVISIONING':
+    print("Endpoint Ready.")
+    break 
+  print(f"Endpoint Provisioning... sleeping for {secs} seconds")
+  time.sleep(secs)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Create Direct Index
+
+# COMMAND ----------
+
+# get all the indexes for this endpoint
 index_dict = client.list_indexes(endpoint_name)
 if index_dict.get('vector_indexes') is not None:
   all_indexes = [i.get('name') for i in index_dict.get('vector_indexes')]
@@ -341,6 +361,7 @@ else :
 
 # COMMAND ----------
 
+# create the index if it does not exist
 if f'{catalog_name}.{schema_name}.metrics_index' not in all_indexes:
   print("Creating Index.")
   metrics_index = client.create_direct_access_index(
@@ -359,7 +380,7 @@ else :
   metrics_index = client.get_index(endpoint_name, f'{catalog_name}.{schema_name}.metrics_index')
 
 
-
+# create the index if it does not exist
 if f'{catalog_name}.{schema_name}.sql_index' not in all_indexes:
   print("Creating Index.")
   sql_index = client.create_direct_access_index(
@@ -423,13 +444,8 @@ display(results)
 
 # COMMAND ----------
 
+# Deployed embedding model as API (see 00_Deploy_Embedding_Model_Endpoint)
 model_serving_endpoint_name = "rac_embedding_model_endpoint"
-
-# COMMAND ----------
-
-# deploy model serving endpoint - this code doesn't exist
-# then deploy syncs - this code looks good but needs testing
-# then query the index - this code looks good but needs testing
 
 # COMMAND ----------
 
@@ -440,7 +456,7 @@ else :
   all_indexes = []
 
 
-# create metrics index
+# create metrics sync index
 if f'{catalog_name}.{schema_name}.metrics_sync_index' not in all_indexes:
   print("Creating Index.")
   metrics_sync_index = client.create_delta_sync_index_and_wait(
@@ -450,7 +466,6 @@ if f'{catalog_name}.{schema_name}.metrics_sync_index' not in all_indexes:
     # pipeline_type="TRIGGERED",
     pipeline_type="CONTINUOUS",
     embedding_dimension=384, 
-    # embedding_vector_column="embeddings",
     source_table_name=f'{catalog_name}.{schema_name}.metrics_sync_table',
     embedding_source_column='data',
     embedding_model_endpoint_name=model_serving_endpoint_name,
@@ -461,7 +476,7 @@ else :
   metrics_sync_index = client.get_index(endpoint_name, f'{catalog_name}.{schema_name}.metrics_sync_index')
 
 
-# create a sql index table
+# create a sql index sync table
 if f'{catalog_name}.{schema_name}.sql_sync_index' not in all_indexes:
   print("Creating Index.")
   sql_sync_index = client.create_delta_sync_index_and_wait(
@@ -471,7 +486,6 @@ if f'{catalog_name}.{schema_name}.sql_sync_index' not in all_indexes:
     # pipeline_type="TRIGGERED",
     pipeline_type="CONTINUOUS",
     embedding_dimension=384, 
-    # embedding_vector_column="embeddings",
     source_table_name=f'{catalog_name}.{schema_name}.sql_sync_table',
     embedding_source_column='data',
     embedding_model_endpoint_name=model_serving_endpoint_name,
@@ -480,21 +494,6 @@ if f'{catalog_name}.{schema_name}.sql_sync_index' not in all_indexes:
 else :
   print("Index already exists.")
   sql_sync_index = client.get_index(endpoint_name, f'{catalog_name}.{schema_name}.sql_sync_index')
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC Payload query. It seems that the index automatically sends some query to the endpoint and that request has a specific format. 
-# MAGIC
-# MAGIC There were 25 rows last query. 
-# MAGIC
-# MAGIC ```
-# MAGIC SELECT * 
-# MAGIC
-# MAGIC FROM rac_embedding_model_payload
-# MAGIC
-# MAGIC order by timestamp_ms desc
-# MAGIC ```
 
 # COMMAND ----------
 
@@ -511,7 +510,3 @@ results = metrics_sync_index.similarity_search(
     )
 
 display(results)
-
-# COMMAND ----------
-
-
