@@ -203,3 +203,12 @@ else :
 # MAGIC   ]
 # MAGIC }
 # MAGIC ```
+# MAGIC
+# MAGIC It appears that when pinging the endpoint upon index creation we send several formats to determine which is the one to use. These were the 5 most recent requests from my last attempt: 
+# MAGIC ```
+# MAGIC {"dataframe_split":{"data":[["Welcome to databricks vector search"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
+# MAGIC {"dataframe_split":{"data":[["Welcome to databricks vector search"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
+# MAGIC {"input":["Vector Search probe query for endpoint type: EXTERNAL_MODEL"]}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: ['input']"}
+# MAGIC {"input":["Vector Search probe query for endpoint type: FOUNDATION_MODEL_API"]}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: ['input']"}
+# MAGIC {"dataframe_split":{"data":[["Vector Search probe query for endpoint type: MODELS"]],"columns":[0],"index":[0]}}	{"error_code": "BAD_REQUEST", "message": "Model is missing inputs ['content']. Note that there were extra inputs: [0]"}
+# MAGIC ```

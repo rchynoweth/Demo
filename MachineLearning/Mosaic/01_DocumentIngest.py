@@ -438,7 +438,7 @@ display(results)
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Create Vector Index Sync
+# MAGIC ### Create Vector Index Sync
 # MAGIC
 # MAGIC A Delta Sync Index requires an embedding model to be deployed as a model serving endpoint in Databricks to manage the auto-sync between table and index. 
 
