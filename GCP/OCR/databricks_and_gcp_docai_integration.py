@@ -5,28 +5,26 @@
 # MAGIC Databricks can serve as a general purpose ETL engine that can move data throughout your data ecosystem. Easily connect to any data source and push data as batch or streams. [GCP Document AI](https://cloud.google.com/document-ai?hl=en) is data extraction tool on extract, classify, and split documents. It is easy to check out, go to the link provide and upload an image to test it out. 
 # MAGIC
 # MAGIC The two services are excellent choices as Databricks provides cloud portability and GCP provides best in class document data extraction. 
+# MAGIC
+# MAGIC ## Instructions 
+# MAGIC
+# MAGIC This notebook takes three parameters to set up your data access. The expectation is that images are stored in the volume provided and have the following naming convention with the name of the image: `sea_salt_20241104_081427.jpg`. Additionally, you will need an access token and an existing Document AI deployed in GCP. 
+# MAGIC
+# MAGIC To generate an access token, go into the google cloud shell and run the following command. This is acceptable for development purposes, but you will want to use _<>recommendedation<>_.  
+# MAGIC     ```
+# MAGIC     gcloud auth application-default print-access-token
+# MAGIC     ```
+# MAGIC
+# MAGIC Next you will want to deploy a custom extractor which can be found on this [GCP Page](https://cloud.google.com/document-ai). 
 
 # COMMAND ----------
 
 import requests
 import json
 import base64
-from pyspark.sql.functions import input_file_name
-
-
-
 import pandas as pd
-from pyspark.sql.functions import pandas_udf
+from pyspark.sql.functions import pandas_udf, regexp_extract, input_file_name
 from pyspark.sql.types import StringType, StructType, StructField, IntegerType
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Notes
-# MAGIC 1. Go into the google cloud shell and run the following command to generate an access token for yourself. This is acceptable for development purposes, but you will want to use _<>recommendedation<>_.  
-# MAGIC     ```
-# MAGIC     gcloud auth application-default print-access-token
-# MAGIC     ```
 
 # COMMAND ----------
 
@@ -34,10 +32,17 @@ from pyspark.sql.types import StringType, StructType, StructField, IntegerType
 dbutils.widgets.text('catalog_name', '')
 dbutils.widgets.text('schema_name', '')
 dbutils.widgets.text('volume_name', '')
+dbutils.widgets.text('url', "https://us-documentai.googleapis.com/v1/projects/697856052963/locations/us/processors/5667d7e5c86460e2:process")
 
 catalog_name = dbutils.widgets.get('catalog_name')
 schema_name = dbutils.widgets.get('schema_name')
 volume_name = dbutils.widgets.get('volume_name')
+
+# url to the document ai api
+url = dbutils.widgets.get('url')
+# Retrieve the access token from Databricks secrets
+access_token = dbutils.secrets.get('rac_scope', 'gcp_api_token')
+
 print(f"{catalog_name} | {schema_name} | {volume_name}")
 
 # COMMAND ----------
@@ -53,35 +58,27 @@ spark.sql(f"create volume if not exists {volume_name}")
 
 # volume path to save raw files
 volume_path = f"/Volumes/{catalog_name}/{schema_name}/{volume_name}"
+dbutils.fs.ls(volume_path)[:3]
 
 # COMMAND ----------
 
-dbutils.fs.ls(volume_path)
-
-# COMMAND ----------
-
-# https://docs.databricks.com/en/sql/language-manual/functions/input_file_name.html
-# https://docs.databricks.com/en/ingestion/file-metadata-column.html
+# Notice on the function use here 
+## https://docs.databricks.com/en/sql/language-manual/functions/input_file_name.html
+## https://docs.databricks.com/en/ingestion/file-metadata-column.html
 
 df = (spark.read
       .format('image')
       .load(f"{volume_path}/*.jpg")
-      .withColumn('file_path', input_file_name()) # "_metadata.file_name" - alternative we can select here
+      .withColumn('file_path', input_file_name()) # get file path
+      .withColumn('product_name', regexp_extract('file_path', r'([^/]+)_\d{8}_\d{6}\.jpg$', 1)) # parse out the product name
       )
 display(df)
 
 # COMMAND ----------
 
-# Retrieve the access token from Databricks secrets
-access_token = dbutils.secrets.get('rac_scope', 'gcp_api_token')
-
-# COMMAND ----------
-
 ## UDF to call the API
 ## Loads image bytes via file path. But could also load via image column. 
-## To Do - See what other data is in the image col raw type
 
-url = "https://us-documentai.googleapis.com/v1/projects/697856052963/locations/us/processors/5667d7e5c86460e2:process"
 headers = {
     "Authorization": f"Bearer {access_token}",
     "Content-Type": "application/json; charset=utf-8"
@@ -122,17 +119,10 @@ def process_image(image_path_series: pd.Series) -> pd.Series:
 
 # COMMAND ----------
 
-image_data = open("/Volumes/rac_demo_catalog/rac_demo_db/rac_volume/20241029_094616.jpg", "rb").read()
-image_bytes = base64.b64encode(image_data).decode("utf-8")
-
-# COMMAND ----------
-
 # Apply the UDF to the Spark DataFrame
 # Assuming the Spark DataFrame has a column `file_path` with paths to images
 df = df.withColumn("processed_result", process_image(df["file_path"]))
-df.write.saveAsTable("processed_images", mode="overwrite")
-display(df)
-
+df.write.mode('overwrite').saveAsTable("processed_images", mode="overwrite")
 
 # COMMAND ----------
 
