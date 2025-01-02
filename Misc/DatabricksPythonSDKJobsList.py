@@ -13,10 +13,6 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-BaseJob(created_time=1695220065760, creator_user_name='saurabh.shukla@databricks.com', job_id=308026716685953, settings=JobSettings(compute=None, continuous=None, email_notifications=JobEmailNotifications(no_alert_for_skipped_runs=False, on_duration_warning_threshold_exceeded=None, on_failure=None, on_start=None, on_success=None), format=<Format.MULTI_TASK: 'MULTI_TASK'>, git_source=None, health=None, job_clusters=None, max_concurrent_runs=1, name='master job', notification_settings=None, parameters=None, queue=None, run_as=None, schedule=None, tags=None, tasks=None, timeout_seconds=0, trigger=None, webhook_notifications=None))
-
-# COMMAND ----------
-
 from databricks.sdk import WorkspaceClient
 import time
 
