@@ -35,8 +35,8 @@ Example usage:
 SELECT feature_store.text_cleanup.ds_ba_string_singularization('apples bananas cherries') AS result;
 
 """
-import nltk
 import tempfile
+import nltk
 import os
 from nltk.corpus import wordnet
 from nltk.stem import WordNetLemmatizer

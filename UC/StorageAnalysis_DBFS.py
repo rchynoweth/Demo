@@ -10,12 +10,21 @@ import time
 # COMMAND ----------
 
 dbutils.widgets.text('Starting Directory', "/dbfs/")
+dbutils.widgets.text('Catalog Name', "") 
+dbutils.widgets.text('Schema Name', "") 
 dbutils.widgets.text('Output Table Name', "") 
 dbutils.widgets.text('Number of Worker Cores', "32")
 
 starting_dir = dbutils.widgets.get('Starting Directory')
 output_table_name = dbutils.widgets.get('Output Table Name')
 num_cores = int(dbutils.widgets.get("Number of Worker Cores"))
+catalog_name = dbutils.widgets.get('Catalog Name')
+schema_name = dbutils.widgets.get('Schema Name') 
+
+# COMMAND ----------
+
+spark.sql(f'use catalog {catalog_name}')
+spark.sql(f'use {schema_name}')
 
 # COMMAND ----------
 
@@ -217,6 +226,7 @@ schema = StructType([
 
 
 df = (spark.sql(f"select path_data from {output_table_name}")
+      .repartition(500)
       .withColumn("parsed_json", from_json(col("path_data"), schema))
       .withColumn("data_column", col("parsed_json.data"))
       .select('path_data', explode(col('data_column')).alias("data"))
@@ -231,6 +241,10 @@ df = (spark.sql(f"select path_data from {output_table_name}")
 df.createOrReplaceTempView('analytics_df')
 
 display(df)
+
+# COMMAND ----------
+
+df.write.saveAsTable('silver_storage_analytics')
 
 # COMMAND ----------
 
